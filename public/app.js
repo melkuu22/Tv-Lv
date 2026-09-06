@@ -61,6 +61,10 @@ function playChannel(channel) {
 
   setOverlay(`Ielādē ${channel.name}…`);
 
+  // Browsers only allow autoplay for muted media, so start muted and let the
+  // viewer unmute via the controls.
+  video.muted = true;
+
   if (hls) {
     hls.destroy();
     hls = null;
