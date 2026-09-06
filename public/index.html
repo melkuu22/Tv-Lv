@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="lv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Latvijas.tv free — bezmaksas Latvijas TV</title>
+    <meta
+      name="description"
+      content="Bezmaksas tiešsaistes Latvijas televīzijas kanālu skatīšanās."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <span class="brand-logo">📺</span>
+        <div>
+          <h1>Latvijas<span class="brand-accent">.tv</span></h1>
+          <p class="brand-sub">bezmaksas Latvijas televīzija</p>
+        </div>
+      </div>
+      <div class="status" id="status">
+        <span class="status-dot"></span>
+        <span id="status-text">Ielādē…</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="player-panel">
+        <div class="video-wrap">
+          <video id="video" controls playsinline></video>
+          <div class="video-overlay" id="video-overlay">
+            <div class="spinner"></div>
+            <p id="overlay-text">Izvēlieties kanālu</p>
+          </div>
+        </div>
+        <div class="now-playing" id="now-playing">
+          <div class="np-logo" id="np-logo">📺</div>
+          <div class="np-meta">
+            <h2 id="np-name">Izvēlieties kanālu</h2>
+            <p id="np-tagline">Noklikšķiniet uz kanāla sarakstā, lai sāktu skatīties.</p>
+          </div>
+          <span class="np-badge" id="np-badge" hidden>● TIEŠRAIDE</span>
+        </div>
+      </section>
+
+      <aside class="channel-panel">
+        <h3 class="panel-title">Kanāli</h3>
+        <ul class="channel-list" id="channel-list"></ul>
+      </aside>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Latvijas.tv free · Atvērtā koda demonstrācija · Straumējumi no publiski
+        pieejamiem avotiem
+      </p>
+    </footer>
+
+    <script src="/vendor/hls.js/hls.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "Tv-Lv (Latvijas.tv free)",
+  "install": "npm ci || npm install",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "npm start"
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 3000
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+import express from 'express';
+import compression from 'compression';
+import morgan from 'morgan';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+import { channels, findChannel } from './data/channels.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+
+const app = express();
+
+app.disable('x-powered-by');
+app.use(compression());
+app.use(morgan('dev'));
+
+// Serve the bundled hls.js player library from the installed dependency so the
+// app works fully offline without relying on a public CDN.
+app.use(
+  '/vendor/hls.js',
+  express.static(path.join(__dirname, 'node_modules', 'hls.js', 'dist'))
+);
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', channels: channels.length, uptime: process.uptime() });
+});
+
+app.get('/api/channels', (_req, res) => {
+  res.json({ count: channels.length, channels });
+});
+
+app.get('/api/channels/:id', (req, res) => {
+  const channel = findChannel(req.params.id);
+  if (!channel) {
+    return res.status(404).json({ error: 'channel_not_found', id: req.params.id });
+  }
+  res.json(channel);
+});
+
+// Only start the HTTP server when run directly (not when imported by tests).
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  app.listen(PORT, HOST, () => {
+    console.log(`Latvijas.tv free is running at http://${HOST}:${PORT}`);
+  });
+}
+
+export default app;

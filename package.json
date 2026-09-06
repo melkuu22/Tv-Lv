@@ -1,0 +1,21 @@
+{
+  "name": "tv-lv",
+  "version": "1.0.0",
+  "description": "Latvijas.tv free — a free web app for watching public Latvian TV channels",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "express": "^4.19.2",
+    "hls.js": "^1.5.13",
+    "morgan": "^1.10.0"
+  }
+}
