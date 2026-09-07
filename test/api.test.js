@@ -27,6 +27,21 @@ test('GET /api/health reports ok', async () => {
   assert.equal(body.channels, channels.length);
 });
 
+test('responses include security headers', async () => {
+  const res = await fetch(`${baseUrl}/api/health`);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(res.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.equal(res.headers.get('x-powered-by'), null);
+});
+
+test('GET /api/channels exposes country flags', async () => {
+  const res = await fetch(`${baseUrl}/api/channels`);
+  const body = await res.json();
+  assert.ok(body.countryFlags);
+  assert.equal(typeof body.countryFlags.LV, 'string');
+  assert.equal(typeof body.countryFlags.RU, 'string');
+});
+
 test('GET /api/channels returns the catalogue', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   assert.equal(res.status, 200);
