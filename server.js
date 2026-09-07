@@ -29,6 +29,14 @@ app.disable('x-powered-by');
 app.use(compression());
 app.use(morgan('dev'));
 
+// Minimal, dependency-free security headers.
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 // Serve the bundled hls.js player library from the installed dependency so the
 // app works fully offline without relying on a public CDN.
 app.use(

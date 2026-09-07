@@ -3,6 +3,30 @@ import { Readable } from 'node:stream';
 import { findChannel } from './data/channels.js';
 
 const FETCH_TIMEOUT_MS = 15000;
+const PLAYLIST_CACHE_TTL_MS = 2000;
+
+// Tiny in-memory cache for rewritten playlists. Live playlists change every few
+// seconds, so a very short TTL smooths out rapid re-requests (e.g. a viewer
+// flicking between channels) without serving stale media.
+const playlistCache = new Map();
+
+function cacheGet(key) {
+  const entry = playlistCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at > PLAYLIST_CACHE_TTL_MS) {
+    playlistCache.delete(key);
+    return null;
+  }
+  return entry.body;
+}
+
+function cacheSet(key, body) {
+  // Bound memory: drop the oldest entry once the cache grows too large.
+  if (playlistCache.size > 200) {
+    playlistCache.delete(playlistCache.keys().next().value);
+  }
+  playlistCache.set(key, { body, at: Date.now() });
+}
 
 // Block obviously-private / loopback hosts to avoid turning the proxy into an
 // SSRF vector. The proxy is already gated to channels that opt in (proxy:true),
@@ -74,6 +98,18 @@ export function createProxyHandler() {
       return res.status(400).json({ error: 'blocked_target' });
     }
 
+    const cacheKey = `${channel.id}|${targetUrl.href}`;
+    const maybePlaylist = /\.m3u8(\?|$)/i.test(targetUrl.href);
+    if (maybePlaylist) {
+      const cached = cacheGet(cacheKey);
+      if (cached) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.setHeader('Cache-Control', 'no-cache');
+        return res.send(cached);
+      }
+    }
+
     const headers = { 'User-Agent': 'Mozilla/5.0' };
     if (channel.headers?.userAgent) headers['User-Agent'] = channel.headers.userAgent;
     if (channel.headers?.referer) headers.Referer = channel.headers.referer;
@@ -103,9 +139,11 @@ export function createProxyHandler() {
     if (looksLikePlaylist(finalUrl, contentType)) {
       const body = await upstream.text();
       if (looksLikePlaylist(finalUrl, contentType, body)) {
+        const rewritten = rewritePlaylist(body, finalUrl, channel.id);
+        cacheSet(cacheKey, rewritten);
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
         res.setHeader('Cache-Control', 'no-cache');
-        return res.send(rewritePlaylist(body, finalUrl, channel.id));
+        return res.send(rewritten);
       }
       res.setHeader('Content-Type', contentType || 'text/plain');
       return res.send(body);
