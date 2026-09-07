@@ -38,6 +38,7 @@
             <div class="spinner"></div>
             <p id="overlay-text">Izvēlieties kanālu</p>
           </div>
+          <button class="unmute-btn" id="unmute-btn" hidden>🔇 Ieslēgt skaņu</button>
         </div>
         <div class="now-playing" id="now-playing">
           <div class="np-logo" id="np-logo">📺</div>
@@ -45,13 +46,34 @@
             <h2 id="np-name">Izvēlieties kanālu</h2>
             <p id="np-tagline">Noklikšķiniet uz kanāla sarakstā, lai sāktu skatīties.</p>
           </div>
+          <button
+            class="np-fav"
+            id="np-fav"
+            title="Pievienot izlasei"
+            aria-label="Pievienot izlasei"
+            hidden
+          >
+            ☆
+          </button>
           <span class="np-badge" id="np-badge" hidden>● TIEŠRAIDE</span>
         </div>
       </section>
 
       <aside class="channel-panel">
-        <h3 class="panel-title">Kanāli</h3>
+        <div class="panel-head">
+          <h3 class="panel-title">Kanāli</h3>
+          <input
+            type="search"
+            id="search"
+            class="search"
+            placeholder="Meklēt kanālu…  ( / )"
+            autocomplete="off"
+            aria-label="Meklēt kanālu"
+          />
+          <div class="filters" id="filters"></div>
+        </div>
         <ul class="channel-list" id="channel-list"></ul>
+        <p class="empty-state" id="empty-state" hidden>Nav atrastu kanālu.</p>
       </aside>
     </main>
 
