@@ -12,6 +12,7 @@ const npBadge = document.getElementById('np-badge');
 
 let hls = null;
 let activeId = null;
+let flags = {};
 
 function setOverlay(text, { error = false, hidden = false } = {}) {
   overlayText.textContent = text;
@@ -30,13 +31,20 @@ function renderChannels(channels) {
     const li = document.createElement('li');
     li.className = 'channel-item';
     li.dataset.id = channel.id;
+    const flag = flags[channel.country] || '';
+    const badge =
+      channel.available === false
+        ? '<span class="off-dot" title="Nav pieejams"></span>'
+        : channel.live
+          ? '<span class="live-dot" title="Tiešraide"></span>'
+          : '';
     li.innerHTML = `
       <div class="channel-logo" style="background:${channel.color}">${channel.logo}</div>
       <div class="channel-info">
-        <div class="channel-name">${channel.name}</div>
+        <div class="channel-name">${flag ? `<span class="flag">${flag}</span>` : ''}${channel.name}</div>
         <div class="channel-cat">${channel.category}</div>
       </div>
-      ${channel.live ? '<span class="live-dot" title="Tiešraide"></span>' : ''}
+      ${badge}
     `;
     li.addEventListener('click', () => playChannel(channel));
     listEl.appendChild(li);
@@ -59,22 +67,30 @@ function playChannel(channel) {
   npTagline.textContent = channel.tagline;
   npBadge.hidden = !channel.live;
 
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+  video.removeAttribute('src');
+  video.load();
+
+  const src = channel.playUrl;
+  if (!src) {
+    setOverlay(`${channel.name}: ${channel.tagline}`, { error: true });
+    return;
+  }
+
   setOverlay(`Ielādē ${channel.name}…`);
 
   // Browsers only allow autoplay for muted media, so start muted and let the
   // viewer unmute via the controls.
   video.muted = true;
 
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-
   const onPlaying = () => setOverlay('', { hidden: true });
 
   if (window.Hls && window.Hls.isSupported()) {
     hls = new window.Hls({ enableWorker: true, lowLatencyMode: true });
-    hls.loadSource(channel.stream);
+    hls.loadSource(src);
     hls.attachMedia(video);
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
       video.play().catch(() => {});
@@ -88,7 +104,7 @@ function playChannel(channel) {
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     // Native HLS (Safari).
-    video.src = channel.stream;
+    video.src = src;
     video.play().catch(() => {});
   } else {
     setOverlay('Jūsu pārlūks neatbalsta HLS straumējumu.', { error: true });
@@ -109,9 +125,11 @@ async function init() {
 
   try {
     const data = await fetch('/api/channels').then((r) => r.json());
+    flags = data.countryFlags || {};
     renderChannels(data.channels);
-    if (data.channels.length > 0) {
-      playChannel(data.channels[0]);
+    const first = data.channels.find((c) => c.available !== false) || data.channels[0];
+    if (first) {
+      playChannel(first);
     }
   } catch {
     setOverlay('Neizdevās ielādēt kanālu sarakstu.', { error: true });

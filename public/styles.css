@@ -305,12 +305,24 @@ body {
   color: var(--text-dim);
 }
 
+.channel-name .flag {
+  margin-right: 6px;
+}
+
 .live-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: #ef4444;
   box-shadow: 0 0 6px #ef4444;
+  flex-shrink: 0;
+}
+
+.off-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
   flex-shrink: 0;
 }
 

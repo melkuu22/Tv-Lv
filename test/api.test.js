@@ -36,8 +36,31 @@ test('GET /api/channels returns the catalogue', async () => {
   for (const channel of body.channels) {
     assert.ok(channel.id);
     assert.ok(channel.name);
-    assert.match(channel.stream, /^https?:\/\/.+\.m3u8/);
+    if (channel.available === false) {
+      assert.equal(channel.playUrl, null);
+    } else {
+      assert.match(channel.stream, /^https?:\/\/.+\.m3u8/);
+      assert.ok(channel.playUrl, `expected playUrl for ${channel.id}`);
+    }
   }
+});
+
+test('proxied channels expose a same-origin playUrl', async () => {
+  const res = await fetch(`${baseUrl}/api/channels`);
+  const body = await res.json();
+  for (const channel of body.channels) {
+    if (channel.proxy && channel.available !== false) {
+      assert.equal(channel.playUrl, `/proxy/${channel.id}`);
+    }
+  }
+});
+
+test('proxy rejects unknown / non-proxyable channels', async () => {
+  const unknown = await fetch(`${baseUrl}/proxy/does-not-exist`);
+  assert.equal(unknown.status, 404);
+  // `demo` is a real channel but not flagged proxy:true.
+  const notProxyable = await fetch(`${baseUrl}/proxy/demo`);
+  assert.equal(notProxyable.status, 404);
 });
 
 test('GET /api/channels/:id returns a single channel', async () => {
