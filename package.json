@@ -1,9 +1,26 @@
 {
   "name": "tv-lv",
   "version": "1.0.0",
-  "description": "Latvijas.tv free — a free web app for watching public Latvian TV channels",
+  "description": "Latvijas.tv free — a free web app for watching public Latvian, Russian, Ukrainian and English TV channels",
   "type": "module",
   "main": "server.js",
+  "license": "MIT",
+  "keywords": [
+    "iptv",
+    "hls",
+    "latvia",
+    "tv",
+    "streaming",
+    "express"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/melkuu22/Tv-Lv.git"
+  },
+  "homepage": "https://github.com/melkuu22/Tv-Lv#readme",
+  "bugs": {
+    "url": "https://github.com/melkuu22/Tv-Lv/issues"
+  },
   "engines": {
     "node": ">=20"
   },
