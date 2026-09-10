@@ -93,3 +93,55 @@ test('GET /api/channels/:id 404s for unknown channel', async () => {
   const res = await fetch(`${baseUrl}/api/channels/does-not-exist`);
   assert.equal(res.status, 404);
 });
+
+test('Demo Kanāls is always playable without the proxy', async () => {
+  const res = await fetch(`${baseUrl}/api/channels/demo`);
+  const body = await res.json();
+  assert.equal(body.available, undefined);
+  assert.equal(body.proxy, undefined);
+  assert.match(body.stream, /^https:\/\/test-streams\.mux\.dev\/.+\.m3u8/);
+  assert.equal(body.playUrl, body.stream);
+});
+
+test('unavailable channels have a null playUrl', async () => {
+  const res = await fetch(`${baseUrl}/api/channels/dom2`);
+  const body = await res.json();
+  assert.equal(body.available, false);
+  assert.equal(body.playUrl, null);
+});
+
+test('proxy sets CORS on every response', async () => {
+  const unknown = await fetch(`${baseUrl}/proxy/does-not-exist`);
+  assert.equal(unknown.headers.get('access-control-allow-origin'), '*');
+  const blocked = await fetch(`${baseUrl}/proxy/tnt?u=${encodeURIComponent('http://127.0.0.1/secret.m3u8')}`);
+  assert.equal(blocked.headers.get('access-control-allow-origin'), '*');
+});
+
+test('proxy SSRF guard blocks private and non-http targets', async () => {
+  const cases = [
+    'http://127.0.0.1/secret.m3u8',
+    'http://localhost/secret.m3u8',
+    'http://10.0.0.8/secret.m3u8',
+    'http://192.168.1.1/secret.m3u8',
+    'http://172.16.0.1/secret.m3u8',
+    'http://169.254.169.254/latest/meta-data',
+    'http://[::1]/secret.m3u8',
+    'file:///etc/passwd',
+    'ftp://example.com/x.m3u8',
+  ];
+  for (const target of cases) {
+    const res = await fetch(`${baseUrl}/proxy/tnt?u=${encodeURIComponent(target)}`);
+    assert.equal(res.status, 400, `expected blocked_target for ${target}`);
+    const body = await res.json();
+    assert.equal(body.error, 'blocked_target');
+  }
+});
+
+test('proxy accepts a public https target URL for a proxyable channel', async () => {
+  const res = await fetch(
+    `${baseUrl}/proxy/tnt?u=${encodeURIComponent('https://example.com/playlist.m3u8')}`
+  );
+  // Must not be the SSRF 400 — either upstream fetch works or fails as 502/non-400.
+  assert.notEqual(res.status, 400);
+  assert.equal(res.headers.get('access-control-allow-origin'), '*');
+});
