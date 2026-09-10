@@ -191,7 +191,7 @@ body {
 
 .unmute-btn {
   position: absolute;
-  bottom: 54px;
+  bottom: 72px;
   right: 14px;
   z-index: 5;
   background: rgba(20, 26, 43, 0.92);
