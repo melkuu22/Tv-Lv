@@ -27,7 +27,10 @@ const app = express();
 
 app.disable('x-powered-by');
 app.use(compression());
-app.use(morgan('dev'));
+// Skip HTTP request logging under the test runner to keep test output clean.
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan('dev'));
+}
 
 // Minimal, dependency-free security headers.
 app.use((_req, res, next) => {

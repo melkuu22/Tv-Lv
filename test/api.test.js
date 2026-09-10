@@ -1,8 +1,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import app from '../server.js';
-import { channels } from '../data/channels.js';
+// Set the test environment before importing the app so HTTP request logging is
+// disabled during tests (keeps the test output clean). Dynamic import ensures
+// the env var is set before the module is evaluated, cross-platform.
+process.env.NODE_ENV = 'test';
+const { default: app } = await import('../server.js');
+const { channels } = await import('../data/channels.js');
 
 let server;
 let baseUrl;
