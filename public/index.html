@@ -6,9 +6,8 @@
     <title>Latvijas.tv free — bezmaksas Latvijas TV</title>
     <meta
       name="description"
-      content="Bezmaksas tiešsaistes Latvijas televīzijas kanālu skatīšanās."
+      content="Bezmaksas tiešsaistes Latvijas, krievu, ukraiņu un angļu televīzijas kanāli."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="/styles.css" />
     <link
       rel="icon"
@@ -21,7 +20,7 @@
         <span class="brand-logo">📺</span>
         <div>
           <h1>Latvijas<span class="brand-accent">.tv</span></h1>
-          <p class="brand-sub">bezmaksas Latvijas televīzija</p>
+          <p class="brand-sub">bezmaksas televīzija</p>
         </div>
       </div>
       <div class="status" id="status">
@@ -37,8 +36,13 @@
           <div class="video-overlay" id="video-overlay">
             <div class="spinner"></div>
             <p id="overlay-text">Izvēlieties kanālu</p>
+            <button class="overlay-action" id="overlay-demo" type="button" hidden>
+              Skatīties Demo Kanālu
+            </button>
           </div>
-          <button class="unmute-btn" id="unmute-btn" hidden>🔇 Ieslēgt skaņu</button>
+          <button class="unmute-btn" id="unmute-btn" type="button" hidden>
+            🔇 Ieslēgt skaņu
+          </button>
         </div>
         <div class="now-playing" id="now-playing">
           <div class="np-logo" id="np-logo">📺</div>
@@ -66,7 +70,7 @@
             type="search"
             id="search"
             class="search"
-            placeholder="Meklēt kanālu…  ( / )"
+            placeholder="Meklēt kanālu…"
             autocomplete="off"
             aria-label="Meklēt kanālu"
           />

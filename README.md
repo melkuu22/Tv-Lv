@@ -9,7 +9,7 @@ player and a built-in stream proxy.
 
 - **15 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧), including
   Re:TV, TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, MTV, Al Jazeera
-  English, ABC News, and an always-available demo stream.
+  English, DW English, and an always-available demo stream.
 - **Search + country filters + favourites** (favourites persist in
   `localStorage`).
 - **In-browser HLS playback** via [`hls.js`](https://github.com/video-dev/hls.js)
@@ -21,7 +21,8 @@ player and a built-in stream proxy.
 - **Keyboard shortcuts**: `↑`/`↓` to switch channels, `/` to focus search,
   `m` to unmute.
 - Channels with no free live feed (e.g. Дом-2, blocked by the rights holder)
-  are listed but clearly marked unavailable.
+  are listed but clearly marked unavailable, with a one-tap jump back to
+  Demo Kanāls. Dead or geo-blocked streams never take the app down.
 - Simple JSON API and a `/api/health` endpoint.
 
 ## Tech stack
