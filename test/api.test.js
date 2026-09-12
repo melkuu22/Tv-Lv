@@ -109,7 +109,7 @@ test('Demo Kanāls is always playable without the proxy', async () => {
   assert.equal(body.playUrl, body.stream);
 });
 
-test('France 24 English is proxied because variants are HTTP', async () => {
+test('France 24 English is proxied so relative live segments stay same-origin', async () => {
   const res = await fetch(`${baseUrl}/api/channels/france24-en`);
   assert.equal(res.status, 200);
   const body = await res.json();

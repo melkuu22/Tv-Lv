@@ -206,10 +206,10 @@ export const channels = [
     country: 'EN',
     logo: '🇫🇷',
     color: '#1d4ed8',
-    // Official public HLS. Variants are HTTP-only, so the proxy is required to
-    // avoid mixed-content blocks. Replaces a dead MTV ingest (upstream 403).
+    // Official public HLS media playlist. The older static.france24.com master
+    // pointed at dead HTTP Akamai variants (400). Replaces a dead MTV ingest.
     proxy: true,
-    stream: 'https://static.france24.com/live/F24_EN_HI_HLS/live_tv.m3u8',
+    stream: 'https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_5000.m3u8',
     live: true,
   },
   {
