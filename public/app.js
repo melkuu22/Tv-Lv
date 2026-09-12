@@ -1,7 +1,17 @@
+import {
+  RECOVERY,
+  createHlsConfig,
+  createRecoveryState,
+  decideRecovery,
+  recoveryDelayMs,
+  shouldCatchUp,
+} from './playback.js';
+
 const video = document.getElementById('video');
 const overlay = document.getElementById('video-overlay');
 const overlayText = document.getElementById('overlay-text');
 const overlayDemo = document.getElementById('overlay-demo');
+const overlayRetry = document.getElementById('overlay-retry');
 const listEl = document.getElementById('channel-list');
 const emptyEl = document.getElementById('empty-state');
 const statusEl = document.getElementById('status');
@@ -19,7 +29,8 @@ const npFav = document.getElementById('np-fav');
 
 const LS_FAV = 'tvlv:favorites';
 const LS_LAST = 'tvlv:last';
-const MAX_RECOVERIES = 3;
+const WATCHDOG_MS = 2000;
+const STALL_TICKS = 3;
 
 const FILTERS = [
   { key: 'all', label: 'Visi' },
@@ -37,8 +48,16 @@ let activeFilter = 'all';
 let searchText = '';
 let hls = null;
 let activeId = null;
-let recoveries = 0;
 let playGeneration = 0;
+let recoveryState = createRecoveryState();
+let currentSrc = null;
+let fallbackSrc = null;
+let activeChannel = null;
+let watchdogTimer = null;
+let lastMediaTime = 0;
+let stallTicks = 0;
+let recovering = false;
+let lastOnlineStatus = 'ok';
 
 function loadFavorites() {
   try {
@@ -64,20 +83,26 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function setOverlay(text, { error = false, hidden = false, demo = false } = {}) {
+function setOverlay(text, { error = false, hidden = false, demo = false, retry = false } = {}) {
   overlayText.textContent = text;
   overlay.classList.toggle('hidden', hidden);
   overlay.classList.toggle('error', error);
   if (overlayDemo) overlayDemo.hidden = !demo;
+  if (overlayRetry) overlayRetry.hidden = !retry;
 }
 
 function setStatus(state, text) {
+  lastOnlineStatus = state;
   statusEl.className = `status ${state}`;
   statusText.textContent = text;
 }
 
 function channelById(id) {
   return allChannels.find((c) => c.id === id);
+}
+
+function proxyUrlFor(channel) {
+  return `/proxy/${encodeURIComponent(channel.id)}`;
 }
 
 function visibleChannels() {
@@ -203,11 +228,26 @@ function showUnmute(show) {
   unmuteBtn.hidden = !show;
 }
 
-function stopPlayback() {
+function clearWatchdog() {
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
+  }
+  stallTicks = 0;
+}
+
+function stopHls() {
   if (hls) {
     hls.destroy();
     hls = null;
   }
+}
+
+function stopPlayback() {
+  recovering = false;
+  clearWatchdog();
+  unbindVideoEvents();
+  stopHls();
   video.removeAttribute('src');
   video.load();
   showUnmute(false);
@@ -231,9 +271,203 @@ async function tryStartPlayback() {
   }
 }
 
+function onPlaying() {
+  recovering = false;
+  stallTicks = 0;
+  lastMediaTime = video.currentTime;
+  setOverlay('', { hidden: true });
+  showUnmute(video.muted);
+  if (lastOnlineStatus !== 'error') setStatus('ok', 'Tiešsaistē');
+}
+
+function onWaiting() {
+  if (!activeChannel || video.paused) return;
+  setOverlay(`Buferē ${activeChannel.name}…`);
+}
+
+function onStalled() {
+  if (!activeChannel) return;
+  applyRecovery({ fatal: false, details: 'bufferStalledError' });
+}
+
+function onNativeError() {
+  if (!activeChannel || hls) return;
+  applyRecovery({ fatal: true, type: 'networkError' });
+}
+
+function bindVideoEvents() {
+  video.addEventListener('playing', onPlaying);
+  video.addEventListener('waiting', onWaiting);
+  video.addEventListener('stalled', onStalled);
+  video.addEventListener('error', onNativeError);
+}
+
+function unbindVideoEvents() {
+  video.removeEventListener('playing', onPlaying);
+  video.removeEventListener('waiting', onWaiting);
+  video.removeEventListener('stalled', onStalled);
+  video.removeEventListener('error', onNativeError);
+}
+
+function nudgeLiveEdge() {
+  const liveSync = hls?.liveSyncPosition;
+  if (shouldCatchUp(video.currentTime, liveSync, 8)) {
+    video.currentTime = liveSync;
+  }
+}
+
+function startWatchdog(generation) {
+  clearWatchdog();
+  lastMediaTime = video.currentTime;
+  watchdogTimer = setInterval(() => {
+    if (generation !== playGeneration || !activeChannel) return;
+    if (video.paused && !recovering) return;
+
+    const t = video.currentTime;
+    if (!video.paused && video.readyState >= 2 && t === lastMediaTime) {
+      stallTicks += 1;
+      if (stallTicks === STALL_TICKS) {
+        applyRecovery({ fatal: false, details: 'bufferStalledError' });
+      } else if (stallTicks >= STALL_TICKS * 2) {
+        stallTicks = 0;
+        applyRecovery({ fatal: true, type: 'mediaError' });
+      }
+    } else {
+      stallTicks = 0;
+      lastMediaTime = t;
+    }
+
+    if (activeChannel.live) nudgeLiveEdge();
+  }, WATCHDOG_MS);
+}
+
+function attachHls(src, generation, channel) {
+  stopHls();
+  hls = new window.Hls(createHlsConfig({ live: Boolean(channel.live) }));
+  hls.loadSource(src);
+  hls.attachMedia(video);
+  hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+    if (generation !== playGeneration) return;
+    tryStartPlayback();
+  });
+  hls.on(window.Hls.Events.ERROR, (_event, data) => {
+    if (generation !== playGeneration) return;
+    applyRecovery({
+      fatal: data.fatal,
+      type: data.type,
+      details: data.details,
+      ErrorTypes: window.Hls.ErrorTypes,
+      ErrorDetails: window.Hls.ErrorDetails,
+    });
+  });
+}
+
+function fail(message) {
+  recovering = false;
+  stopPlayback();
+  setStatus('error', 'Straume pārtrūka');
+  setOverlay(message, { error: true, demo: true, retry: true });
+}
+
+async function applyRecovery(error) {
+  if (!activeChannel || recovering) return;
+  const generation = playGeneration;
+  const decided = decideRecovery(recoveryState, error);
+  recoveryState = decided.state;
+  const action = decided.action;
+  if (!action) return;
+
+  if (action === RECOVERY.NUDGE_LIVE) {
+    nudgeLiveEdge();
+    if (hls) hls.startLoad();
+    return;
+  }
+
+  recovering = true;
+  const wait = recoveryDelayMs(action, recoveryState);
+
+  if (action === RECOVERY.GIVE_UP) {
+    fail(`${activeChannel.name} šobrīd nespēlē. Mēģiniet vēlreiz vai izvēlieties citu kanālu.`);
+    return;
+  }
+
+  setOverlay(`Atjauno savienojumu ar ${activeChannel.name}…`);
+  setStatus('warn', 'Atjauno…');
+  if (wait) {
+    await new Promise((r) => setTimeout(r, wait));
+    if (generation !== playGeneration) return;
+  }
+
+  if (action === RECOVERY.START_LOAD) {
+    if (hls) hls.startLoad();
+    else reloadNative(currentSrc);
+    recovering = false;
+    return;
+  }
+
+  if (action === RECOVERY.RECOVER_MEDIA) {
+    if (hls) hls.recoverMediaError();
+    else reloadNative(currentSrc);
+    recovering = false;
+    return;
+  }
+
+  if (action === RECOVERY.SWAP_AUDIO) {
+    if (hls) {
+      hls.swapAudioCodec();
+      hls.recoverMediaError();
+    } else {
+      reloadNative(currentSrc);
+    }
+    recovering = false;
+    return;
+  }
+
+  if (action === RECOVERY.FALLBACK_PROXY && fallbackSrc && fallbackSrc !== currentSrc) {
+    currentSrc = fallbackSrc;
+    startSource(currentSrc, generation, activeChannel);
+    return;
+  }
+
+  if (action === RECOVERY.FALLBACK_PROXY || action === RECOVERY.RESTART) {
+    startSource(currentSrc, generation, activeChannel);
+    return;
+  }
+
+  recovering = false;
+}
+
+function reloadNative(src) {
+  if (!src) return;
+  const joiner = src.includes('?') ? '&' : '?';
+  video.src = `${src}${joiner}_r=${Date.now()}`;
+  tryStartPlayback();
+}
+
+function startSource(src, generation, channel) {
+  recovering = false;
+  unbindVideoEvents();
+  bindVideoEvents();
+  startWatchdog(generation);
+
+  if (window.Hls && window.Hls.isSupported()) {
+    attachHls(src, generation, channel);
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    stopHls();
+    video.src = src;
+    tryStartPlayback();
+  } else {
+    fail('Jūsu pārlūks neatbalsta HLS straumējumu.');
+  }
+}
+
 function playChannel(channel) {
   const generation = ++playGeneration;
-  recoveries = 0;
+  recoveryState = createRecoveryState();
+  if (channel.playUrl && channel.playUrl.startsWith('/proxy/')) {
+    recoveryState.usedFallback = true;
+  }
+  activeChannel = channel;
   markActive(channel.id);
   try {
     localStorage.setItem(LS_LAST, channel.id);
@@ -253,70 +487,45 @@ function playChannel(channel) {
   stopPlayback();
 
   const src = channel.playUrl;
+  fallbackSrc = proxyUrlFor(channel);
+  currentSrc = src;
+  if (src === fallbackSrc) recoveryState.usedFallback = true;
+
   if (!src || channel.available === false) {
     setOverlay(`${channel.name}: ${channel.tagline}`, { error: true, demo: true });
     return;
   }
 
   setOverlay(`Ielādē ${channel.name}…`);
+  startSource(src, generation, channel);
+}
 
-  const onPlaying = () => {
-    if (generation !== playGeneration) return;
-    setOverlay('', { hidden: true });
-    showUnmute(video.muted);
-  };
-
-  const fail = (message) => {
-    if (generation !== playGeneration) return;
-    stopPlayback();
-    setOverlay(message, { error: true, demo: true });
-  };
-
-  if (window.Hls && window.Hls.isSupported()) {
-    hls = new window.Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
-      // Live channels drop segments; keep a little extra buffer so flickers recover.
-      maxBufferLength: 30,
-    });
-    hls.loadSource(src);
-    hls.attachMedia(video);
-    hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-      if (generation !== playGeneration) return;
-      tryStartPlayback();
-    });
-    hls.on(window.Hls.Events.ERROR, (_event, data) => {
-      if (generation !== playGeneration) return;
-      if (!data.fatal) return;
-      if (recoveries < MAX_RECOVERIES && data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
-        recoveries += 1;
-        setOverlay(`Atjauno savienojumu ar ${channel.name}…`);
-        hls.startLoad();
-        return;
-      }
-      if (recoveries < MAX_RECOVERIES && data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-        recoveries += 1;
-        hls.recoverMediaError();
-        return;
-      }
-      fail(`${channel.name} šobrīd nespēlē. Izvēlieties citu kanālu.`);
-    });
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = src; // Native HLS (Safari / some TV browsers).
-    tryStartPlayback();
-  } else {
-    fail('Jūsu pārlūks neatbalsta HLS straumējumu.');
+function resumeSession({ force = false } = {}) {
+  if (!activeChannel || !currentSrc || activeChannel.available === false) return;
+  const playing = !video.paused && video.readyState >= 2;
+  if (playing && !force) {
+    if (hls) hls.startLoad();
     return;
   }
-
-  video.removeEventListener('playing', onPlaying);
-  video.addEventListener('playing', onPlaying, { once: true });
+  setOverlay(`Atjauno savienojumu ar ${activeChannel.name}…`);
+  setStatus('warn', 'Atjauno…');
+  if (hls) {
+    hls.startLoad();
+    tryStartPlayback();
+    return;
+  }
+  reloadNative(currentSrc);
 }
 
 function unmute() {
   video.muted = false;
   if (video.paused) video.play().catch(() => {});
   showUnmute(false);
+}
+
+function retryActive() {
+  const channel = activeChannel || channelById(activeId);
+  if (channel) playChannel(channel);
 }
 
 function playDemo() {
@@ -350,7 +559,16 @@ function setupKeyboard() {
       moveSelection(-1);
     } else if (e.key.toLowerCase() === 'm') {
       unmute();
+    } else if (e.key === 'r' || e.key === 'R') {
+      retryActive();
     }
+  });
+}
+
+function setupSessionGuards() {
+  window.addEventListener('online', () => resumeSession({ force: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) resumeSession();
   });
 }
 
@@ -367,6 +585,10 @@ async function init() {
     e.stopPropagation();
     playDemo();
   });
+  overlayRetry?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    retryActive();
+  });
   npFav.addEventListener('click', () => activeId && toggleFavorite(activeId));
   searchEl.addEventListener('input', () => {
     searchText = searchEl.value;
@@ -374,6 +596,7 @@ async function init() {
   });
   video.addEventListener('volumechange', () => showUnmute(video.muted && !video.paused));
   setupKeyboard();
+  setupSessionGuards();
 
   try {
     const health = await fetch('/api/health').then((r) => r.json());
@@ -405,7 +628,7 @@ async function init() {
       allChannels[0];
     if (first) playChannel(first);
   } catch {
-    setOverlay('Neizdevās ielādēt kanālu sarakstu.', { error: true });
+    setOverlay('Neizdevās ielādēt kanālu sarakstu.', { error: true, retry: true });
     setStatus('error', 'Kļūda ielādējot kanālus');
   }
 }
