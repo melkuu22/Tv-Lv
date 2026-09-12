@@ -8,18 +8,22 @@ player and a built-in stream proxy.
 ## Features
 
 - **15 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧), including
-  Re:TV, TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, MTV, Al Jazeera
-  English, DW English, and an always-available demo stream.
+  Re:TV, TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, France 24
+  English, Al Jazeera English, DW English, and an always-available demo stream.
 - **Search + country filters + favourites** (favourites persist in
   `localStorage`).
 - **In-browser HLS playback** via [`hls.js`](https://github.com/video-dev/hls.js)
-  (bundled locally, no CDN required), with automatic recovery from transient
-  network/media errors.
+  (bundled locally, no CDN required), tuned for regular live HLS (not
+  low-latency), with a recovery session: network/media repair, audio-codec
+  swap, full player restart, same-origin proxy fallback, live-edge catch-up,
+  stall watchdog, and auto-resume on reconnect or tab focus.
 - **Built-in HLS proxy** (`/proxy/:id`) that adds CORS headers and optional
   upstream request headers, so streams whose segments lack CORS still play in
-  the browser. Gated to known channels with an SSRF guard.
+  the browser. Follows redirects safely, retries playlist fetches, aborts work
+  when the viewer switches away, and is gated to known channels with an SSRF
+  guard.
 - **Keyboard shortcuts**: `↑`/`↓` to switch channels, `/` to focus search,
-  `m` to unmute.
+  `m` to unmute, `r` to retry the current channel.
 - Channels with no free live feed (e.g. Дом-2, blocked by the rights holder)
   are listed but clearly marked unavailable, with a one-tap jump back to
   Demo Kanāls. Dead or geo-blocked streams never take the app down.
@@ -61,7 +65,7 @@ docker run --rm -p 3000:3000 tv-lv
 | `GET /api/health`       | Health check + channel count                 |
 | `GET /api/channels`     | Full catalogue (`playUrl`, `countryFlags`)   |
 | `GET /api/channels/:id` | A single channel by id                       |
-| `GET /proxy/:id`        | HLS proxy for channels flagged `proxy: true` |
+| `GET /proxy/:id`        | HLS proxy for any playable catalogue stream |
 
 ## Tests
 
@@ -78,7 +82,7 @@ pull request (see `.github/workflows/ci.yml`).
 server.js          Express app + JSON API + proxy mount
 proxy.js           Same-origin HLS proxy (CORS + header injection + rewriting)
 data/channels.js   Channel catalogue
-public/            Frontend (index.html, styles.css, app.js)
+public/            Frontend (index.html, styles.css, app.js, playback.js)
 test/              API + proxy tests (node:test)
 Dockerfile         Production container image
 .cursor/           Cloud Agent dev environment config
