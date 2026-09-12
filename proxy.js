@@ -82,6 +82,8 @@ function rewritePlaylist(text, baseUrl, channelId) {
 export function createProxyHandler() {
   return async function proxyHandler(req, res) {
     const channel = findChannel(req.params.id);
+    // Always advertise CORS so the player can read both playlists and error JSON.
+    res.setHeader('Access-Control-Allow-Origin', '*');
     if (!channel || !channel.proxy) {
       return res.status(404).json({ error: 'not_proxyable', id: req.params.id });
     }
@@ -125,8 +127,6 @@ export function createProxyHandler() {
       return res.status(502).json({ error: 'upstream_fetch_failed', message: String(err) });
     }
     clearTimeout(timeout);
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
 
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: 'upstream_error', status: upstream.status });

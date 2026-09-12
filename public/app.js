@@ -1,6 +1,7 @@
 const video = document.getElementById('video');
 const overlay = document.getElementById('video-overlay');
 const overlayText = document.getElementById('overlay-text');
+const overlayDemo = document.getElementById('overlay-demo');
 const listEl = document.getElementById('channel-list');
 const emptyEl = document.getElementById('empty-state');
 const statusEl = document.getElementById('status');
@@ -8,6 +9,7 @@ const statusText = document.getElementById('status-text');
 const searchEl = document.getElementById('search');
 const filtersEl = document.getElementById('filters');
 const unmuteBtn = document.getElementById('unmute-btn');
+const videoWrap = document.querySelector('.video-wrap');
 
 const npLogo = document.getElementById('np-logo');
 const npName = document.getElementById('np-name');
@@ -17,6 +19,7 @@ const npFav = document.getElementById('np-fav');
 
 const LS_FAV = 'tvlv:favorites';
 const LS_LAST = 'tvlv:last';
+const MAX_RECOVERIES = 3;
 
 const FILTERS = [
   { key: 'all', label: 'Visi' },
@@ -34,6 +37,8 @@ let activeFilter = 'all';
 let searchText = '';
 let hls = null;
 let activeId = null;
+let recoveries = 0;
+let playGeneration = 0;
 
 function loadFavorites() {
   try {
@@ -51,10 +56,19 @@ function saveFavorites() {
   }
 }
 
-function setOverlay(text, { error = false, hidden = false } = {}) {
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function setOverlay(text, { error = false, hidden = false, demo = false } = {}) {
   overlayText.textContent = text;
   overlay.classList.toggle('hidden', hidden);
   overlay.classList.toggle('error', error);
+  if (overlayDemo) overlayDemo.hidden = !demo;
 }
 
 function setStatus(state, text) {
@@ -73,7 +87,14 @@ function visibleChannels() {
     if (['LV', 'RU', 'UA', 'EN'].includes(activeFilter) && c.country !== activeFilter) {
       return false;
     }
-    if (q && !(`${c.name} ${c.category}`.toLowerCase().includes(q))) return false;
+    if (
+      q &&
+      !`${c.name} ${c.category} ${c.tagline || ''} ${c.language || ''}`
+        .toLowerCase()
+        .includes(q)
+    ) {
+      return false;
+    }
     return true;
   });
 }
@@ -88,6 +109,7 @@ function renderFilters() {
           ? favorites.size
           : allChannels.filter((c) => c.country === f.key).length;
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = `filter${activeFilter === f.key ? ' active' : ''}`;
     btn.textContent = `${f.label} ${count}`;
     btn.addEventListener('click', () => {
@@ -99,32 +121,45 @@ function renderFilters() {
   }
 }
 
+function emptyMessage() {
+  if (activeFilter === 'fav' && favorites.size === 0) {
+    return 'Izlase ir tukša. Pieskarieties ★ pie kanāla, lai pievienotu.';
+  }
+  if (searchText.trim()) {
+    return 'Nekas nav atrasts. Nomainiet meklēšanu vai filtru.';
+  }
+  return 'Nav atrastu kanālu.';
+}
+
 function renderChannels() {
   const list = visibleChannels();
   listEl.innerHTML = '';
   emptyEl.hidden = list.length > 0;
+  emptyEl.textContent = emptyMessage();
 
   for (const channel of list) {
     const flag = flags[channel.country] || '';
-    const badge =
-      channel.available === false
-        ? '<span class="off-dot" title="Nav pieejams"></span>'
-        : channel.live
-          ? '<span class="live-dot" title="Tiešraide"></span>'
-          : '';
+    const unavailable = channel.available === false;
+    const badge = unavailable
+      ? '<span class="off-badge">Nav pieejams</span>'
+      : channel.live
+        ? '<span class="live-dot" title="Tiešraide"></span>'
+        : '';
     const isFav = favorites.has(channel.id);
 
     const li = document.createElement('li');
-    li.className = `channel-item${channel.id === activeId ? ' active' : ''}`;
+    li.className = `channel-item${channel.id === activeId ? ' active' : ''}${
+      unavailable ? ' unavailable' : ''
+    }`;
     li.dataset.id = channel.id;
     li.innerHTML = `
-      <div class="channel-logo" style="background:${channel.color}">${channel.logo}</div>
+      <div class="channel-logo" style="background:${escapeHtml(channel.color)}">${channel.logo}</div>
       <div class="channel-info">
-        <div class="channel-name">${flag ? `<span class="flag">${flag}</span>` : ''}${channel.name}</div>
-        <div class="channel-cat">${channel.category}</div>
+        <div class="channel-name">${flag ? `<span class="flag">${flag}</span>` : ''}${escapeHtml(channel.name)}</div>
+        <div class="channel-cat">${escapeHtml(channel.category)}${unavailable ? ' · nav tiešraides' : ''}</div>
       </div>
       ${badge}
-      <button class="fav-star${isFav ? ' on' : ''}" title="Izlase" aria-label="Izlase">${isFav ? '★' : '☆'}</button>
+      <button class="fav-star${isFav ? ' on' : ''}" type="button" title="Izlase" aria-label="Izlase">${isFav ? '★' : '☆'}</button>
     `;
     li.addEventListener('click', () => playChannel(channel));
     li.querySelector('.fav-star').addEventListener('click', (e) => {
@@ -168,7 +203,37 @@ function showUnmute(show) {
   unmuteBtn.hidden = !show;
 }
 
+function stopPlayback() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+  video.removeAttribute('src');
+  video.load();
+  showUnmute(false);
+}
+
+async function tryStartPlayback() {
+  // TV / desktop browsers sometimes allow unmuted autoplay; otherwise start
+  // muted and show one big unmute control so watching stays one tap.
+  video.muted = false;
+  try {
+    await video.play();
+    showUnmute(false);
+  } catch {
+    video.muted = true;
+    try {
+      await video.play();
+      showUnmute(true);
+    } catch {
+      showUnmute(true);
+    }
+  }
+}
+
 function playChannel(channel) {
+  const generation = ++playGeneration;
+  recoveries = 0;
   markActive(channel.id);
   try {
     localStorage.setItem(LS_LAST, channel.id);
@@ -180,62 +245,67 @@ function playChannel(channel) {
   npLogo.style.background = channel.color;
   npName.textContent = channel.name;
   npTagline.textContent = channel.tagline;
-  npBadge.hidden = !channel.live;
+  npBadge.hidden = !channel.live || channel.available === false;
+  npBadge.textContent = channel.available === false ? 'NAV PIEEJAMS' : '● TIEŠRAIDE';
+  npBadge.classList.toggle('off', channel.available === false);
   updateFavButton();
 
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-  video.removeAttribute('src');
-  video.load();
-  showUnmute(false);
+  stopPlayback();
 
   const src = channel.playUrl;
-  if (!src) {
-    setOverlay(`${channel.name}: ${channel.tagline}`, { error: true });
+  if (!src || channel.available === false) {
+    setOverlay(`${channel.name}: ${channel.tagline}`, { error: true, demo: true });
     return;
   }
 
   setOverlay(`Ielādē ${channel.name}…`);
 
-  // Browsers only allow autoplay for muted media, so start muted and offer an
-  // explicit unmute affordance once playback begins.
-  video.muted = true;
-
   const onPlaying = () => {
+    if (generation !== playGeneration) return;
     setOverlay('', { hidden: true });
     showUnmute(video.muted);
   };
 
+  const fail = (message) => {
+    if (generation !== playGeneration) return;
+    stopPlayback();
+    setOverlay(message, { error: true, demo: true });
+  };
+
   if (window.Hls && window.Hls.isSupported()) {
-    hls = new window.Hls({ enableWorker: true, lowLatencyMode: true });
+    hls = new window.Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+      // Live channels drop segments; keep a little extra buffer so flickers recover.
+      maxBufferLength: 30,
+    });
     hls.loadSource(src);
     hls.attachMedia(video);
     hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-      video.play().catch(() => {});
+      if (generation !== playGeneration) return;
+      tryStartPlayback();
     });
     hls.on(window.Hls.Events.ERROR, (_event, data) => {
+      if (generation !== playGeneration) return;
       if (!data.fatal) return;
-      // Try to auto-recover transient live-stream errors before giving up.
-      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+      if (recoveries < MAX_RECOVERIES && data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+        recoveries += 1;
         setOverlay(`Atjauno savienojumu ar ${channel.name}…`);
         hls.startLoad();
-      } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-        hls.recoverMediaError();
-      } else {
-        hls.destroy();
-        hls = null;
-        setOverlay(`Neizdevās ielādēt ${channel.name}. Mēģiniet citu kanālu.`, {
-          error: true,
-        });
+        return;
       }
+      if (recoveries < MAX_RECOVERIES && data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+        recoveries += 1;
+        hls.recoverMediaError();
+        return;
+      }
+      fail(`${channel.name} šobrīd nespēlē. Izvēlieties citu kanālu.`);
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = src; // Native HLS (Safari).
-    video.play().catch(() => {});
+    video.src = src; // Native HLS (Safari / some TV browsers).
+    tryStartPlayback();
   } else {
-    setOverlay('Jūsu pārlūks neatbalsta HLS straumējumu.', { error: true });
+    fail('Jūsu pārlūks neatbalsta HLS straumējumu.');
     return;
   }
 
@@ -247,6 +317,11 @@ function unmute() {
   video.muted = false;
   if (video.paused) video.play().catch(() => {});
   showUnmute(false);
+}
+
+function playDemo() {
+  const demo = channelById('demo') || allChannels.find((c) => c.available !== false);
+  if (demo) playChannel(demo);
 }
 
 function moveSelection(delta) {
@@ -280,7 +355,18 @@ function setupKeyboard() {
 }
 
 async function init() {
-  unmuteBtn.addEventListener('click', unmute);
+  unmuteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    unmute();
+  });
+  videoWrap?.addEventListener('click', (e) => {
+    if (e.target.closest('button, video')) return;
+    if (video.muted && !video.paused) unmute();
+  });
+  overlayDemo?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    playDemo();
+  });
   npFav.addEventListener('click', () => activeId && toggleFavorite(activeId));
   searchEl.addEventListener('input', () => {
     searchText = searchEl.value;
@@ -291,7 +377,8 @@ async function init() {
 
   try {
     const health = await fetch('/api/health').then((r) => r.json());
-    setStatus('ok', `Tiešsaistē · ${health.channels} kanāli`);
+    setStatus('ok', 'Tiešsaistē');
+    statusEl.title = `${health.channels} kanāli`;
   } catch {
     setStatus('error', 'Serveris nav pieejams');
   }
@@ -313,6 +400,7 @@ async function init() {
     const last = lastId && channelById(lastId);
     const first =
       (last && last.available !== false && last) ||
+      allChannels.find((c) => c.id === 'demo') ||
       allChannels.find((c) => c.available !== false) ||
       allChannels[0];
     if (first) playChannel(first);

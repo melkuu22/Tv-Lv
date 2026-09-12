@@ -185,6 +185,8 @@ export const channels = [
     country: 'EN',
     logo: '🎸',
     color: '#7c3aed',
+    // HTTP-only upstream — play through the proxy so HTTPS pages are not mixed-content blocked.
+    proxy: true,
     stream: 'http://dvr2.kablova.tv/MTV/index.m3u8',
     live: true,
   },
@@ -197,20 +199,22 @@ export const channels = [
     country: 'EN',
     logo: '🌍',
     color: '#b45309',
+    // Upstream playlists/segments omit CORS headers.
+    proxy: true,
     stream: 'https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8',
     live: true,
   },
   {
-    id: 'abc-news',
-    name: 'ABC News Live',
-    tagline: '24/7 news from ABC News',
+    id: 'dw-en',
+    name: 'DW English',
+    tagline: 'Deutsche Welle — international news',
     category: 'Ziņas',
     language: 'English',
     country: 'EN',
-    logo: '🇺🇸',
+    logo: '🇩🇪',
     color: '#1d4ed8',
-    stream:
-      'https://abcnews-streams.akamaized.net/hls/live/2023560/abcnewshudson1/master.m3u8',
+    // Official public HLS. Replaces ABC News Live, whose Akamai variants now 404.
+    stream: 'https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8',
     live: true,
   },
 ];
