@@ -10,10 +10,31 @@
 // Optional per-channel fields:
 //   country   ISO-ish label + used to render a flag (LV/RU/UA/EN).
 //   proxy     when true, the stream is played back through the server's HLS
-//             proxy (`/proxy/:id`) so no-CORS / header-restricted upstreams
-//             still play in the browser.
+//             proxy (`/proxy/:id`) so no-CORS / header-restricted / HTTP
+//             upstreams still play in the browser. Any playable channel can
+//             also be fetched via the proxy as a CORS fallback.
 //   headers   upstream request headers ({ userAgent, referer }) for the proxy.
 //   available when false, the channel is listed but has no playable live feed.
+
+export function isPlayable(channel) {
+  return Boolean(channel && channel.available !== false && channel.stream);
+}
+
+/** Initial playUrl goes through the proxy (CORS, mixed-content, extra headers). */
+export function shouldProxy(channel) {
+  if (!isPlayable(channel)) return false;
+  if (channel.proxy) return true;
+  try {
+    return new URL(channel.stream).protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** Any catalogue stream may be fetched via /proxy/:id (direct-play fallback). */
+export function isProxyable(channel) {
+  return isPlayable(channel);
+}
 
 export const channels = [
   {
@@ -177,17 +198,18 @@ export const channels = [
 
   // ─── Angļu / English ───────────────────────────────────────────────
   {
-    id: 'mtv',
-    name: 'MTV',
-    tagline: 'Music Television',
-    category: 'Mūzika',
+    id: 'france24-en',
+    name: 'France 24 English',
+    tagline: 'International news in English',
+    category: 'Ziņas',
     language: 'English',
     country: 'EN',
-    logo: '🎸',
-    color: '#7c3aed',
-    // HTTP-only upstream — play through the proxy so HTTPS pages are not mixed-content blocked.
+    logo: '🇫🇷',
+    color: '#1d4ed8',
+    // Official public HLS. Variants are HTTP-only, so the proxy is required to
+    // avoid mixed-content blocks. Replaces a dead MTV ingest (upstream 403).
     proxy: true,
-    stream: 'http://dvr2.kablova.tv/MTV/index.m3u8',
+    stream: 'https://static.france24.com/live/F24_EN_HI_HLS/live_tv.m3u8',
     live: true,
   },
   {
