@@ -8,6 +8,7 @@ import {
   decideRecovery,
   recoveryDelayMs,
   shouldCatchUp,
+  pickStartupChannel,
 } from '../public/playback.js';
 
 const types = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
@@ -76,6 +77,16 @@ test('live catch-up triggers only when drift exceeds the threshold', () => {
   assert.equal(shouldCatchUp(10, 15, 12), false);
   assert.equal(shouldCatchUp(10, 25, 12), true);
   assert.equal(shouldCatchUp(Number.NaN, 25, 12), false);
+});
+
+test('startup prefers a live channel over Demo Kanāls', () => {
+  const demo = { id: 'demo', live: false, playUrl: 'https://demo.example/a.m3u8' };
+  const retv = { id: 'retv', live: true, playUrl: '/proxy/retv' };
+  const off = { id: 'dom2', live: false, available: false, playUrl: null };
+  assert.equal(pickStartupChannel([demo, retv, off], null).id, 'retv');
+  assert.equal(pickStartupChannel([demo, retv], 'demo').id, 'retv');
+  assert.equal(pickStartupChannel([demo, retv], 'retv').id, 'retv');
+  assert.equal(pickStartupChannel([demo], 'demo').id, 'demo');
 });
 
 test('recovery delays grow with attempts', () => {

@@ -46,6 +46,15 @@ test('GET /api/channels exposes country flags', async () => {
   assert.equal(typeof body.countryFlags.RU, 'string');
 });
 
+test('catalogue leads with a live channel, not Demo Kanāls', async () => {
+  const res = await fetch(`${baseUrl}/api/channels`);
+  const body = await res.json();
+  assert.equal(body.channels[0].id, 'retv');
+  assert.equal(body.channels[0].live, true);
+  assert.equal(body.channels.at(-1).id, 'demo');
+  assert.equal(body.channels.at(-1).live, false);
+});
+
 test('GET /api/channels returns the catalogue', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   assert.equal(res.status, 200);

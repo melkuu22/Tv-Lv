@@ -5,6 +5,8 @@ import {
   decideRecovery,
   recoveryDelayMs,
   shouldCatchUp,
+  isLivePlayable,
+  pickStartupChannel,
 } from './playback.js';
 
 const video = document.getElementById('video');
@@ -534,7 +536,9 @@ function playDemo() {
 }
 
 function moveSelection(delta) {
-  const list = visibleChannels().filter((c) => c.available !== false);
+  const visible = visibleChannels().filter((c) => c.available !== false);
+  const live = visible.filter((c) => isLivePlayable(c));
+  const list = live.length > 0 ? live : visible;
   if (list.length === 0) return;
   const idx = list.findIndex((c) => c.id === activeId);
   const next = idx === -1 ? 0 : (idx + delta + list.length) % list.length;
@@ -620,12 +624,7 @@ async function init() {
         return null;
       }
     })();
-    const last = lastId && channelById(lastId);
-    const first =
-      (last && last.available !== false && last) ||
-      allChannels.find((c) => c.id === 'demo') ||
-      allChannels.find((c) => c.available !== false) ||
-      allChannels[0];
+    const first = pickStartupChannel(allChannels, lastId);
     if (first) playChannel(first);
   } catch {
     setOverlay('Neizdevās ielādēt kanālu sarakstu.', { error: true, retry: true });

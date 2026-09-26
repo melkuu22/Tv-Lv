@@ -3,9 +3,8 @@
 //
 // Every stream URL here is a public HLS (`.m3u8`) source taken from openly
 // published channel lists. Availability of live TV streams can change or be
-// geo-restricted, so the catalogue always leads with a rock-solid public test
-// stream ("Demo Kanāls") that is guaranteed to play. This keeps the app
-// demonstrably functional even when an upstream broadcaster is offline.
+// geo-restricted, so the catalogue leads with live channels and keeps a
+// public test stream ("Demo Kanāls") at the end as a last-resort fallback.
 //
 // Optional per-channel fields:
 //   country   ISO-ish label + used to render a flag (LV/RU/UA/EN).
@@ -37,18 +36,6 @@ export function isProxyable(channel) {
 }
 
 export const channels = [
-  {
-    id: 'demo',
-    name: 'Demo Kanāls',
-    tagline: 'Vienmēr pieejams demonstrācijas straumējums',
-    category: 'Demo',
-    language: 'Latviešu',
-    country: 'LV',
-    logo: '📺',
-    color: '#8b5cf6',
-    stream: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-    live: false,
-  },
   {
     id: 'retv',
     name: 'Re:TV',
@@ -238,6 +225,18 @@ export const channels = [
     // Official public HLS. Replaces ABC News Live, whose Akamai variants now 404.
     stream: 'https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8',
     live: true,
+  },
+  {
+    id: 'demo',
+    name: 'Demo Kanāls',
+    tagline: 'Rezerves straumējums, ja tiešraide nav pieejama',
+    category: 'Demo',
+    language: 'Latviešu',
+    country: 'LV',
+    logo: '📺',
+    color: '#8b5cf6',
+    stream: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+    live: false,
   },
 ];
 

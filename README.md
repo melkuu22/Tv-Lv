@@ -7,9 +7,10 @@ player and a built-in stream proxy.
 
 ## Features
 
-- **15 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧), including
-  Re:TV, TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, France 24
-  English, Al Jazeera English, DW English, and an always-available demo stream.
+- **15 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧). The player
+  starts on a live broadcast (Re:TV by default). The list includes Re:TV,
+  TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, France 24 English,
+  Al Jazeera English, DW English, and a last-resort demo stream.
 - **Search + country filters + favourites** (favourites persist in
   `localStorage`).
 - **In-browser HLS playback** via [`hls.js`](https://github.com/video-dev/hls.js)

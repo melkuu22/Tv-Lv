@@ -52,6 +52,26 @@ export function recoveryDelayMs(action, state) {
   return 0;
 }
 
+export function isLivePlayable(channel) {
+  if (!channel || channel.available === false || !channel.live) return false;
+  if (channel.playUrl === null) return false;
+  return Boolean(channel.playUrl || channel.stream);
+}
+
+/** Prefer a live broadcast. Demo is only the last-resort fallback. */
+export function pickStartupChannel(channels, lastId) {
+  const list = Array.isArray(channels) ? channels : [];
+  const last = lastId ? list.find((c) => c.id === lastId) : null;
+  if (isLivePlayable(last)) return last;
+  return (
+    list.find((c) => isLivePlayable(c)) ||
+    list.find((c) => c?.id === 'demo' && c.available !== false) ||
+    list.find((c) => c?.available !== false) ||
+    list[0] ||
+    null
+  );
+}
+
 export function shouldCatchUp(currentTime, liveSyncPosition, maxDrift = 12) {
   if (!Number.isFinite(currentTime) || !Number.isFinite(liveSyncPosition)) return false;
   return liveSyncPosition - currentTime > maxDrift;
