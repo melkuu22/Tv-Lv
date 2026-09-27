@@ -4,14 +4,14 @@ import morgan from 'morgan';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { channels, findChannel, countryFlags } from './data/channels.js';
+import { channels, findChannel, countryFlags, shouldProxy, isPlayable } from './data/channels.js';
 import { createProxyHandler } from './proxy.js';
 
-// The URL the browser should actually load for a channel: proxied channels are
-// played back through this server so no-CORS upstreams work in the browser.
+// Direct CORS-friendly HTTPS streams play from the origin; everything else
+// (HTTP, missing CORS, extra headers) goes through the same-origin proxy.
 function playUrlFor(channel) {
-  if (channel.available === false) return null;
-  return channel.proxy ? `/proxy/${channel.id}` : channel.stream;
+  if (!isPlayable(channel)) return null;
+  return shouldProxy(channel) ? `/proxy/${channel.id}` : channel.stream;
 }
 
 function toPublicChannel(channel) {
@@ -26,7 +26,15 @@ const HOST = process.env.HOST || '0.0.0.0';
 const app = express();
 
 app.disable('x-powered-by');
-app.use(compression());
+// Do not gzip HLS media — it wastes CPU and adds live latency.
+app.use(
+  compression({
+    filter(req, res) {
+      if (req.path.startsWith('/proxy/')) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 // Skip HTTP request logging under the test runner to keep test output clean.
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
@@ -69,7 +77,7 @@ app.get('/api/channels/:id', (req, res) => {
   res.json(toPublicChannel(channel));
 });
 
-// HLS proxy for channels flagged `proxy: true` (adds CORS + upstream headers).
+// HLS proxy for catalogue streams (CORS, mixed-content, header injection).
 app.get('/proxy/:id', createProxyHandler());
 
 // Only start the HTTP server when run directly (not when imported by tests).

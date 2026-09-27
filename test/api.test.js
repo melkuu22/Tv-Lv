@@ -46,6 +46,15 @@ test('GET /api/channels exposes country flags', async () => {
   assert.equal(typeof body.countryFlags.RU, 'string');
 });
 
+test('catalogue leads with a live channel, not Demo Kanāls', async () => {
+  const res = await fetch(`${baseUrl}/api/channels`);
+  const body = await res.json();
+  assert.equal(body.channels[0].id, 'retv');
+  assert.equal(body.channels[0].live, true);
+  assert.equal(body.channels.at(-1).id, 'demo');
+  assert.equal(body.channels.at(-1).live, false);
+});
+
 test('GET /api/channels returns the catalogue', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   assert.equal(res.status, 200);
@@ -74,12 +83,18 @@ test('proxied channels expose a same-origin playUrl', async () => {
   }
 });
 
-test('proxy rejects unknown / non-proxyable channels', async () => {
+test('proxy rejects unknown channels', async () => {
   const unknown = await fetch(`${baseUrl}/proxy/does-not-exist`);
   assert.equal(unknown.status, 404);
-  // `demo` is a real channel but not flagged proxy:true.
-  const notProxyable = await fetch(`${baseUrl}/proxy/demo`);
-  assert.equal(notProxyable.status, 404);
+});
+
+test('proxy serves a catalogue fallback for Demo Kanāls', async () => {
+  const res = await fetch(`${baseUrl}/proxy/demo`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') || '', /mpegurl/i);
+  const body = await res.text();
+  assert.match(body, /^#EXTM3U/);
+  assert.match(body, /\/proxy\/demo\?u=/);
 });
 
 test('GET /api/channels/:id returns a single channel', async () => {
@@ -101,6 +116,14 @@ test('Demo Kanāls is always playable without the proxy', async () => {
   assert.equal(body.proxy, undefined);
   assert.match(body.stream, /^https:\/\/test-streams\.mux\.dev\/.+\.m3u8/);
   assert.equal(body.playUrl, body.stream);
+});
+
+test('France 24 English is proxied so relative live segments stay same-origin', async () => {
+  const res = await fetch(`${baseUrl}/api/channels/france24-en`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.proxy, true);
+  assert.equal(body.playUrl, '/proxy/france24-en');
 });
 
 test('unavailable channels have a null playUrl', async () => {
@@ -126,6 +149,9 @@ test('proxy SSRF guard blocks private and non-http targets', async () => {
     'http://172.16.0.1/secret.m3u8',
     'http://169.254.169.254/latest/meta-data',
     'http://[::1]/secret.m3u8',
+    'http://[::ffff:127.0.0.1]/secret.m3u8',
+    'http://[fe80::1]/secret.m3u8',
+    'http://[fc00::1]/secret.m3u8',
     'file:///etc/passwd',
     'ftp://example.com/x.m3u8',
   ];
