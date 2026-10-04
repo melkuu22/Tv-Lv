@@ -1,0 +1,12 @@
+{
+  "$id": "habit",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "preset": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "category": { "type": "string", "enum": ["transport", "energy", "food", "shopping", "waste", "water"] },
+    "frequency": { "type": "string", "enum": ["daily", "weekly"] }
+  },
+  "anyOf": [{ "required": ["preset"] }, { "required": ["name", "category"] }]
+}

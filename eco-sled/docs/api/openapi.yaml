@@ -1,0 +1,340 @@
+openapi: 3.0.3
+info:
+  title: Эко-След API
+  version: 1.0.0
+  description: |
+    MVP API for Eco Score, footprint, recommendations, habits and challenges.
+    Calculations use version eco-1.0.0. The assistant repeats those figures and does not invent new ones.
+servers:
+  - url: http://localhost:4173
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is up
+  /api/v1/auth/register:
+    post:
+      summary: Register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Register"
+      responses:
+        "201":
+          description: Session created
+        "400":
+          description: Invalid body or missing consent
+        "409":
+          description: Email already used
+  /api/v1/auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Login"
+      responses:
+        "200":
+          description: Session created
+        "401":
+          description: Wrong email or password
+  /api/v1/auth/refresh:
+    post:
+      summary: Rotate refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Refresh"
+      responses:
+        "200":
+          description: New session
+        "401":
+          description: Refresh token is unknown or expired
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Refresh"
+      responses:
+        "200":
+          description: Logged out
+  /api/v1/auth/demo:
+    post:
+      summary: Create a sample account
+      responses:
+        "201":
+          description: Demo session with a calculated score
+  /api/v1/user:
+    get:
+      summary: Profile, points, streak, achievements
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Profile
+    patch:
+      summary: Update name, language or country
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Updated profile
+    delete:
+      summary: Delete the account and related rows
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Deleted
+  /api/v1/user/export:
+    get:
+      summary: Export personal data
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: JSON export
+  /api/v1/onboarding:
+    post:
+      summary: Save the first footprint and calculate Eco Score
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Onboarding"
+      responses:
+        "201":
+          description: Score and recommendations
+  /api/v1/footprint:
+    get:
+      summary: Current profile, journal and latest score
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Footprint
+    post:
+      summary: Add a journal entry
+      description: Journal entries do not change Eco Score.
+      security: [{ bearer: [] }]
+      responses:
+        "201":
+          description: Updated footprint
+  /api/v1/footprint/profile:
+    put:
+      summary: Replace habits and recalculate
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Onboarding"
+      responses:
+        "200":
+          description: New score
+  /api/v1/footprint/{id}:
+    patch:
+      summary: Replace a journal entry
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Updated footprint
+        "404":
+          description: Not found
+    delete:
+      summary: Delete a journal entry
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Updated footprint
+  /api/v1/eco-score:
+    get:
+      summary: Latest score
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Score
+        "409":
+          description: Onboarding is not complete
+  /api/v1/eco-score/recalculate:
+    post:
+      summary: Store a new score from the current profile
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Score
+  /api/v1/eco-score/history:
+    get:
+      summary: Score history
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: History
+  /api/v1/dashboard:
+    get:
+      summary: Home screen payload
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Dashboard
+  /api/v1/recommendations:
+    get:
+      summary: Personal recommendations
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Recommendations
+  /api/v1/recommendations/{id}/start:
+    post:
+      summary: Mark a recommendation active
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Recommendation
+  /api/v1/recommendations/{id}/complete:
+    post:
+      summary: Complete a recommendation and add points
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Recommendation
+        "409":
+          description: Already completed
+  /api/v1/challenges:
+    get:
+      summary: Challenge catalogue with progress
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Challenges
+  /api/v1/challenges/{id}/join:
+    post:
+      summary: Join a challenge
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "201":
+          description: Challenge
+  /api/v1/challenges/{id}/checkin:
+    post:
+      summary: Check in for today
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Challenge
+        "409":
+          description: Already checked in or not joined
+  /api/v1/habits:
+    get:
+      summary: Habits and presets
+      security: [{ bearer: [] }]
+      responses:
+        "200":
+          description: Habits
+    post:
+      summary: Create a habit from a preset or a custom name
+      security: [{ bearer: [] }]
+      responses:
+        "201":
+          description: Habits
+  /api/v1/habits/{id}/checkin:
+    post:
+      summary: Check in a habit for today
+      security: [{ bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Habits
+  /api/v1/ai/chat:
+    post:
+      summary: Ask a question answered only from the stored calculation
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Reply and the facts that were used
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    Register:
+      type: object
+      additionalProperties: false
+      required: [name, email, password, consent]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        password: { type: string, minLength: 8 }
+        consent: { type: boolean, enum: [true] }
+        language: { type: string, enum: [ru, de, en] }
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    Refresh:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    Onboarding:
+      type: object
+      required: [country, members, housing, modes, diet, shopping, wasteSorting, priority]
+      properties:
+        country: { type: string, enum: [DE, LV, EU] }
+        members: { type: integer, minimum: 1, maximum: 8 }
+        housing: { type: string, enum: [apartment, house, other] }
+        modes:
+          type: array
+          items: { type: string, enum: [car, public, ebike, bike, walk, plane] }
+        carKmPerWeek: { type: number }
+        flightsPerYear: { type: number }
+        diet: { type: string, enum: [meat_daily, meat_regular, meat_rare, vegetarian, vegan] }
+        shopping: { type: string, enum: [often, sometimes, rare, secondhand] }
+        wasteSorting: { type: string, enum: [none, some, most, all] }
+        waterLitersPerDay: { type: number }
+        priority: { type: string, enum: [money, waste, co2, health, all] }
+        electricityKwhYear: { type: number, nullable: true }
+        heatingKwhYear: { type: number, nullable: true }

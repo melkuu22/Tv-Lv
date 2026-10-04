@@ -1,0 +1,11 @@
+{
+  "$id": "user-patch",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "language": { "type": "string", "enum": ["ru", "de", "en"] },
+    "country": { "type": "string", "enum": ["DE", "LV", "EU"] }
+  }
+}
