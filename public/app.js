@@ -8,6 +8,7 @@ import {
   isLivePlayable,
   pickStartupChannel,
 } from './playback.js';
+import { mountWidgets } from './widgets-ui.js';
 
 const video = document.getElementById('video');
 const overlay = document.getElementById('video-overlay');
@@ -723,6 +724,15 @@ async function init() {
     }
   }
   if (first) playChannel(first);
+
+  mountWidgets({
+    getChannels: () => allChannels,
+    getActiveId: () => activeId,
+    playChannelById: (id) => {
+      const channel = channelById(id);
+      if (channel) playChannel(channel);
+    },
+  });
 }
 
 init();

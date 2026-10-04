@@ -17,6 +17,9 @@ player and a built-in stream proxy.
   not included — only openly published streams.
 - **Search + bouquet tabs + favourites** (favourites persist in
   `localStorage`).
+- **Weather, clock figures, calendar and reminders** for Riga
+  (`Europe/Riga`): Open-Meteo via `/api/weather`, a month grid, and
+  channel reminders stored in `localStorage`.
 - **In-browser HLS playback** via [`hls.js`](https://github.com/video-dev/hls.js)
   (bundled locally, no CDN required), tuned for regular live HLS (not
   low-latency), with a recovery session: network/media repair, audio-codec
@@ -71,6 +74,7 @@ docker run --rm -p 3000:3000 tv-lv
 | `GET /live/index.m3u8`  | Local live HLS (ffmpeg restream)             |
 | `GET /api/channels`     | Full catalogue (`playUrl`, `countryFlags`, `bouquets`) |
 | `GET /api/channels/:id` | A single channel by id                       |
+| `GET /api/weather`      | Riga weather (Open-Meteo) + figures          |
 | `GET /proxy/:id`        | HLS proxy for any playable catalogue stream |
 
 ## Tests

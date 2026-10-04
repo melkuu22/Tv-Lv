@@ -7,6 +7,7 @@ import path from 'node:path';
 import { channels, findChannel, countryFlags, bouquets, shouldProxy, isPlayable } from './data/channels.js';
 import { createProxyHandler } from './proxy.js';
 import { LIVE_DIR, liveMuxStatus, startLiveMux } from './live-mux.js';
+import { fetchRigaWeather } from './public/widgets.js';
 
 // Same-origin play: local mux at /live, everything else through /proxy/:id.
 function playUrlFor(channel) {
@@ -84,6 +85,15 @@ app.get('/api/channels', (_req, res) => {
     bouquets,
     channels: channels.map(toPublicChannel),
   });
+});
+
+app.get('/api/weather', async (_req, res) => {
+  try {
+    const weather = await fetchRigaWeather();
+    res.json(weather);
+  } catch {
+    res.status(502).json({ error: 'weather_unavailable', city: 'Rīga' });
+  }
 });
 
 app.get('/api/channels/:id', (req, res) => {

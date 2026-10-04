@@ -138,6 +138,19 @@ test('Demo Kanāls is playable through the same-origin proxy', async () => {
   assert.equal(body.playUrl, '/proxy/demo');
 });
 
+test('GET /api/weather returns Riga weather or a structured failure', async () => {
+  const res = await fetch(`${baseUrl}/api/weather`);
+  const body = await res.json();
+  assert.ok(body.city === 'Rīga' || body.city === 'Riga');
+  if (res.status === 200) {
+    assert.ok(body.figure);
+    assert.ok(Array.isArray(body.daily));
+  } else {
+    assert.equal(res.status, 502);
+    assert.equal(body.error, 'weather_unavailable');
+  }
+});
+
 test('GET /api/health reports the live mux status', async () => {
   const res = await fetch(`${baseUrl}/api/health`);
   const body = await res.json();
