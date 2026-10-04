@@ -7,8 +7,9 @@ player and a built-in stream proxy.
 
 ## Features
 
-- **15 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧). The player
-  starts on a live broadcast (Re:TV by default). The list includes Re:TV,
+- **16 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧). The player
+  starts on **Latvijas.tv Live**, a same-origin HLS mux the server keeps up
+  from a live upstream (ffmpeg). The list also includes Re:TV,
   TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, France 24 English,
   Al Jazeera English, DW English, and a last-resort demo stream.
 - **Search + country filters + favourites** (favourites persist in
@@ -63,7 +64,8 @@ docker run --rm -p 3000:3000 tv-lv
 
 | Endpoint                | Description                                  |
 | ----------------------- | -------------------------------------------- |
-| `GET /api/health`       | Health check + channel count                 |
+| `GET /api/health`       | Health check + channel count + live mux      |
+| `GET /live/index.m3u8`  | Local live HLS (ffmpeg restream)             |
 | `GET /api/channels`     | Full catalogue (`playUrl`, `countryFlags`)   |
 | `GET /api/channels/:id` | A single channel by id                       |
 | `GET /proxy/:id`        | HLS proxy for any playable catalogue stream |

@@ -6,11 +6,12 @@ import path from 'node:path';
 
 import { channels, findChannel, countryFlags, shouldProxy, isPlayable } from './data/channels.js';
 import { createProxyHandler } from './proxy.js';
+import { LIVE_DIR, liveMuxStatus, startLiveMux } from './live-mux.js';
 
-// Direct CORS-friendly HTTPS streams play from the origin; everything else
-// (HTTP, missing CORS, extra headers) goes through the same-origin proxy.
+// Same-origin play: local mux at /live, everything else through /proxy/:id.
 function playUrlFor(channel) {
   if (!isPlayable(channel)) return null;
+  if (channel.local) return channel.stream;
   return shouldProxy(channel) ? `/proxy/${channel.id}` : channel.stream;
 }
 
@@ -57,8 +58,23 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use(
+  '/live',
+  express.static(LIVE_DIR, {
+    setHeaders(res) {
+      res.setHeader('Cache-Control', 'no-cache, no-store');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    },
+  })
+);
+
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', channels: channels.length, uptime: process.uptime() });
+  res.json({
+    status: 'ok',
+    channels: channels.length,
+    uptime: process.uptime(),
+    live: liveMuxStatus(),
+  });
 });
 
 app.get('/api/channels', (_req, res) => {
@@ -83,6 +99,10 @@ app.get('/proxy/:id', createProxyHandler());
 // Only start the HTTP server when run directly (not when imported by tests).
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
+  const remotes = channels.filter((c) => c.live && /^https?:\/\//.test(c.stream || '')).map((c) => c.stream);
+  startLiveMux(remotes).catch((err) => {
+    console.error('live mux failed to start', err);
+  });
   app.listen(PORT, HOST, () => {
     console.log(`Latvijas.tv free is running at http://${HOST}:${PORT}`);
   });

@@ -21,21 +21,29 @@ export function isPlayable(channel) {
 
 /** Initial playUrl goes through the proxy (CORS, mixed-content, extra headers). */
 export function shouldProxy(channel) {
-  if (!isPlayable(channel)) return false;
-  if (channel.proxy) return true;
-  try {
-    return new URL(channel.stream).protocol === 'http:';
-  } catch {
-    return false;
-  }
+  if (!isPlayable(channel) || channel.local) return false;
+  return true;
 }
 
-/** Any catalogue stream may be fetched via /proxy/:id (direct-play fallback). */
+/** Remote catalogue streams may be fetched via /proxy/:id. */
 export function isProxyable(channel) {
-  return isPlayable(channel);
+  return isPlayable(channel) && !channel.local;
 }
 
 export const channels = [
+  {
+    id: 'house-live',
+    name: 'Latvijas.tv Live',
+    tagline: 'Servera tiešraide — vienmēr pieejama',
+    category: 'Tiešraide',
+    language: 'Latviešu',
+    country: 'LV',
+    logo: '📡',
+    color: '#22c55e',
+    local: true,
+    stream: '/live/index.m3u8',
+    live: true,
+  },
   {
     id: 'retv',
     name: 'Re:TV',

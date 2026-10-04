@@ -46,11 +46,12 @@ test('GET /api/channels exposes country flags', async () => {
   assert.equal(typeof body.countryFlags.RU, 'string');
 });
 
-test('catalogue leads with a live channel, not Demo Kanāls', async () => {
+test('catalogue leads with the local live mux, not Demo Kanāls', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   const body = await res.json();
-  assert.equal(body.channels[0].id, 'retv');
+  assert.equal(body.channels[0].id, 'house-live');
   assert.equal(body.channels[0].live, true);
+  assert.equal(body.channels[0].playUrl, '/live/index.m3u8');
   assert.equal(body.channels.at(-1).id, 'demo');
   assert.equal(body.channels.at(-1).live, false);
 });
@@ -66,9 +67,12 @@ test('GET /api/channels returns the catalogue', async () => {
     assert.ok(channel.name);
     if (channel.available === false) {
       assert.equal(channel.playUrl, null);
+    } else if (channel.local) {
+      assert.match(channel.stream, /^\/live\/.+\.m3u8/);
+      assert.equal(channel.playUrl, channel.stream);
     } else {
       assert.match(channel.stream, /^https?:\/\/.+\.m3u8/);
-      assert.ok(channel.playUrl, `expected playUrl for ${channel.id}`);
+      assert.equal(channel.playUrl, `/proxy/${channel.id}`);
     }
   }
 });
@@ -109,13 +113,19 @@ test('GET /api/channels/:id 404s for unknown channel', async () => {
   assert.equal(res.status, 404);
 });
 
-test('Demo Kanāls is always playable without the proxy', async () => {
+test('Demo Kanāls is playable through the same-origin proxy', async () => {
   const res = await fetch(`${baseUrl}/api/channels/demo`);
   const body = await res.json();
   assert.equal(body.available, undefined);
-  assert.equal(body.proxy, undefined);
   assert.match(body.stream, /^https:\/\/test-streams\.mux\.dev\/.+\.m3u8/);
-  assert.equal(body.playUrl, body.stream);
+  assert.equal(body.playUrl, '/proxy/demo');
+});
+
+test('GET /api/health reports the live mux status', async () => {
+  const res = await fetch(`${baseUrl}/api/health`);
+  const body = await res.json();
+  assert.ok(body.live);
+  assert.equal(typeof body.live.ready, 'boolean');
 });
 
 test('France 24 English is proxied so relative live segments stay same-origin', async () => {

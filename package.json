@@ -25,7 +25,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node server.js",
+    "start": "node scripts/run.mjs",
+    "start:once": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test"
   },

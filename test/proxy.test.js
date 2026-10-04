@@ -47,17 +47,20 @@ test('isBlockedTarget rejects non-http schemes', () => {
   assert.equal(isBlockedTarget(new URL('file:///etc/passwd')), true);
 });
 
-test('catalogue helpers: demo is playable but not initially proxied', () => {
+test('catalogue helpers: remotes are proxied, local mux is not', () => {
   const demo = { id: 'demo', stream: 'https://example.com/a.m3u8' };
   const liveHttp = { id: 'x', stream: 'http://cdn.example/a.m3u8', live: true };
   const flagged = { id: 'y', stream: 'https://cdn.example/a.m3u8', proxy: true };
+  const local = { id: 'house-live', stream: '/live/index.m3u8', local: true, live: true };
   const off = { id: 'z', stream: null, available: false };
 
   assert.equal(isPlayable(demo), true);
-  assert.equal(shouldProxy(demo), false);
+  assert.equal(shouldProxy(demo), true);
   assert.equal(isProxyable(demo), true);
   assert.equal(shouldProxy(liveHttp), true);
   assert.equal(shouldProxy(flagged), true);
+  assert.equal(shouldProxy(local), false);
+  assert.equal(isProxyable(local), false);
   assert.equal(isPlayable(off), false);
   assert.equal(shouldProxy(off), false);
 });

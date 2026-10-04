@@ -34,6 +34,45 @@ const LS_LAST = 'tvlv:last';
 const WATCHDOG_MS = 2000;
 const STALL_TICKS = 3;
 
+const EMBEDDED_FALLBACK = [
+  {
+    id: 'house-live',
+    name: 'Latvijas.tv Live',
+    tagline: 'Servera tiešraide — vienmēr pieejama',
+    category: 'Tiešraide',
+    language: 'Latviešu',
+    country: 'LV',
+    logo: '📡',
+    color: '#22c55e',
+    live: true,
+    playUrl: '/live/index.m3u8',
+  },
+  {
+    id: 'retv',
+    name: 'Re:TV',
+    tagline: 'Latvijas reģionālā televīzija',
+    category: 'Vispārīgs',
+    language: 'Latviešu',
+    country: 'LV',
+    logo: '🟥',
+    color: '#e11d48',
+    live: true,
+    playUrl: '/proxy/retv',
+  },
+  {
+    id: 'aljazeera-en',
+    name: 'Al Jazeera English',
+    tagline: 'International news in English',
+    category: 'Ziņas',
+    language: 'English',
+    country: 'EN',
+    logo: '🌍',
+    color: '#b45309',
+    live: true,
+    playUrl: '/proxy/aljazeera-en',
+  },
+];
+
 const FILTERS = [
   { key: 'all', label: 'Visi' },
   { key: 'fav', label: '★ Izlase' },
@@ -104,6 +143,9 @@ function channelById(id) {
 }
 
 function proxyUrlFor(channel) {
+  if (channel.local || channel.id === 'house-live') {
+    return '/proxy/retv';
+  }
   return `/proxy/${encodeURIComponent(channel.id)}`;
 }
 
@@ -576,6 +618,20 @@ function setupSessionGuards() {
   });
 }
 
+async function waitForHouseLive(ms = 10000) {
+  const started = Date.now();
+  while (Date.now() - started < ms) {
+    try {
+      const health = await fetch('/api/health').then((r) => r.json());
+      if (health.live?.ready) return true;
+    } catch {
+      /* keep waiting */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return false;
+}
+
 async function init() {
   unmuteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -607,29 +663,39 @@ async function init() {
     setStatus('ok', 'Tiešsaistē');
     statusEl.title = `${health.channels} kanāli`;
   } catch {
-    setStatus('error', 'Serveris nav pieejams');
+    setStatus('warn', 'Lokalais režīms');
   }
 
   try {
     const data = await fetch('/api/channels').then((r) => r.json());
     flags = data.countryFlags || {};
     allChannels = data.channels;
-    renderFilters();
-    renderChannels();
-
-    const lastId = (() => {
-      try {
-        return localStorage.getItem(LS_LAST);
-      } catch {
-        return null;
-      }
-    })();
-    const first = pickStartupChannel(allChannels, lastId);
-    if (first) playChannel(first);
   } catch {
-    setOverlay('Neizdevās ielādēt kanālu sarakstu.', { error: true, retry: true });
-    setStatus('error', 'Kļūda ielādējot kanālus');
+    flags = { LV: '🇱🇻', RU: '🇷🇺', UA: '🇺🇦', EN: '🇬🇧' };
+    allChannels = EMBEDDED_FALLBACK;
+    setStatus('warn', 'Rezerves katalogs');
   }
+
+  renderFilters();
+  renderChannels();
+
+  const lastId = (() => {
+    try {
+      return localStorage.getItem(LS_LAST);
+    } catch {
+      return null;
+    }
+  })();
+  let first = pickStartupChannel(allChannels, lastId);
+  if (first?.id === 'house-live') {
+    setOverlay('Ielādē tiešraidi…');
+    const ready = await waitForHouseLive();
+    if (!ready) {
+      first =
+        allChannels.find((c) => c.id !== 'house-live' && isLivePlayable(c)) || first;
+    }
+  }
+  if (first) playChannel(first);
 }
 
 init();
