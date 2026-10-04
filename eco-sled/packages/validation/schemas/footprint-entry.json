@@ -1,0 +1,12 @@
+{
+  "$id": "footprint-entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["category", "subcategory", "value", "unit"],
+  "properties": {
+    "category": { "type": "string", "enum": ["transport", "energy", "food", "shopping", "waste", "water"] },
+    "subcategory": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "value": { "type": "number", "minimum": 0, "maximum": 1000000 },
+    "unit": { "type": "string", "minLength": 1, "maxLength": 16 }
+  }
+}

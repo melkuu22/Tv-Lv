@@ -1,0 +1,9 @@
+{
+  "$id": "refresh",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["refreshToken"],
+  "properties": {
+    "refreshToken": { "type": "string", "minLength": 20, "maxLength": 500 }
+  }
+}

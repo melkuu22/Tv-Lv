@@ -1,0 +1,27 @@
+{
+  "$id": "onboarding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["country", "members", "housing", "modes", "diet", "shopping", "wasteSorting", "priority"],
+  "properties": {
+    "country": { "type": "string", "enum": ["DE", "LV", "EU"] },
+    "members": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "housing": { "type": "string", "enum": ["apartment", "house", "other"] },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["car", "public", "ebike", "bike", "walk", "plane"] }
+    },
+    "carKmPerWeek": { "type": "number", "minimum": 0, "maximum": 2000 },
+    "flightsPerYear": { "type": "number", "minimum": 0, "maximum": 52 },
+    "diet": { "type": "string", "enum": ["meat_daily", "meat_regular", "meat_rare", "vegetarian", "vegan"] },
+    "shopping": { "type": "string", "enum": ["often", "sometimes", "rare", "secondhand"] },
+    "wasteSorting": { "type": "string", "enum": ["none", "some", "most", "all"] },
+    "waterLitersPerDay": { "type": "number", "minimum": 20, "maximum": 500 },
+    "priority": { "type": "string", "enum": ["money", "waste", "co2", "health", "all"] },
+    "electricityKwhYear": { "type": ["number", "null"], "minimum": 0, "maximum": 100000 },
+    "heatingKwhYear": { "type": ["number", "null"], "minimum": 0, "maximum": 200000 }
+  }
+}

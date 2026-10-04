@@ -1,0 +1,13 @@
+{
+  "$id": "register",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "email", "password", "consent"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "email": { "type": "string", "minLength": 5, "maxLength": 320, "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
+    "password": { "type": "string", "minLength": 8, "maxLength": 200 },
+    "consent": { "const": true },
+    "language": { "type": "string", "enum": ["ru", "de", "en"] }
+  }
+}

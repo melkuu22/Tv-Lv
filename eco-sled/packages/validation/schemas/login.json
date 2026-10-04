@@ -1,0 +1,10 @@
+{
+  "$id": "login",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["email", "password"],
+  "properties": {
+    "email": { "type": "string", "minLength": 5, "maxLength": 320 },
+    "password": { "type": "string", "minLength": 1, "maxLength": 200 }
+  }
+}
