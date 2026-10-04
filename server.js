@@ -4,7 +4,7 @@ import morgan from 'morgan';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { channels, findChannel, countryFlags, shouldProxy, isPlayable } from './data/channels.js';
+import { channels, findChannel, countryFlags, bouquets, shouldProxy, isPlayable } from './data/channels.js';
 import { createProxyHandler } from './proxy.js';
 import { LIVE_DIR, liveMuxStatus, startLiveMux } from './live-mux.js';
 
@@ -81,6 +81,7 @@ app.get('/api/channels', (_req, res) => {
   res.json({
     count: channels.length,
     countryFlags,
+    bouquets,
     channels: channels.map(toPublicChannel),
   });
 });

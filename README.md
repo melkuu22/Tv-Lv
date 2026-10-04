@@ -7,12 +7,15 @@ player and a built-in stream proxy.
 
 ## Features
 
-- **16 channels** grouped by country with flags (🇱🇻 🇷🇺 🇺🇦 🇬🇧). The player
-  starts on **Latvijas.tv Live**, a same-origin HLS mux the server keeps up
-  from a live upstream (ffmpeg). The list also includes Re:TV,
-  TV Jūrmala, TVNET, ТНТ, Пятница!, Ю, 24 Канал, 1+1, France 24 English,
-  Al Jazeera English, DW English, and a last-resort demo stream.
-- **Search + country filters + favourites** (favourites persist in
+- **27 channels** in set-top-style bouquets (🇱🇻 LV #1–#2, 🇷🇺 RU #1–#2,
+  🇺🇦 UA #1, 🇬🇧 EN #1–#2). The player starts on **Latvijas.tv Live**, a
+  same-origin HLS mux the server keeps up from a live upstream (ffmpeg).
+  The list includes LTV1, LTV7, Re:TV, TV3 Life, TV Jūrmala, TVNET,
+  Мир 24, РБК, 360°, RTG TV, ТНТ, Пятница!, Ю, 2x2, 24 Канал, 1+1,
+  France 24, Al Jazeera, DW, CGTN, Bloomberg, Arirang, and a last-resort
+  demo stream. Pay-TV packages (Disney, Discovery, Eurosport, Match) are
+  not included — only openly published streams.
+- **Search + bouquet tabs + favourites** (favourites persist in
   `localStorage`).
 - **In-browser HLS playback** via [`hls.js`](https://github.com/video-dev/hls.js)
   (bundled locally, no CDN required), tuned for regular live HLS (not
@@ -66,7 +69,7 @@ docker run --rm -p 3000:3000 tv-lv
 | ----------------------- | -------------------------------------------- |
 | `GET /api/health`       | Health check + channel count + live mux      |
 | `GET /live/index.m3u8`  | Local live HLS (ffmpeg restream)             |
-| `GET /api/channels`     | Full catalogue (`playUrl`, `countryFlags`)   |
+| `GET /api/channels`     | Full catalogue (`playUrl`, `countryFlags`, `bouquets`) |
 | `GET /api/channels/:id` | A single channel by id                       |
 | `GET /proxy/:id`        | HLS proxy for any playable catalogue stream |
 

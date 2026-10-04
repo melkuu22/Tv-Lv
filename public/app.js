@@ -45,6 +45,7 @@ const EMBEDDED_FALLBACK = [
     logo: '📡',
     color: '#22c55e',
     live: true,
+    bouquet: 'LV1',
     playUrl: '/live/index.m3u8',
   },
   {
@@ -57,6 +58,7 @@ const EMBEDDED_FALLBACK = [
     logo: '🟥',
     color: '#e11d48',
     live: true,
+    bouquet: 'LV1',
     playUrl: '/proxy/retv',
   },
   {
@@ -69,18 +71,27 @@ const EMBEDDED_FALLBACK = [
     logo: '🌍',
     color: '#b45309',
     live: true,
+    bouquet: 'EN1',
     playUrl: '/proxy/aljazeera-en',
   },
 ];
 
-const FILTERS = [
+const STATIC_FILTERS = [
   { key: 'all', label: 'Visi' },
   { key: 'fav', label: '★ Izlase' },
-  { key: 'LV', label: '🇱🇻 LV' },
-  { key: 'RU', label: '🇷🇺 RU' },
-  { key: 'UA', label: '🇺🇦 UA' },
-  { key: 'EN', label: '🇬🇧 EN' },
 ];
+
+const FALLBACK_BOUQUETS = [
+  { key: 'LV1', country: 'LV', label: 'LV #1' },
+  { key: 'LV2', country: 'LV', label: 'LV #2' },
+  { key: 'RU1', country: 'RU', label: 'RU #1' },
+  { key: 'RU2', country: 'RU', label: 'RU #2' },
+  { key: 'UA1', country: 'UA', label: 'UA #1' },
+  { key: 'EN1', country: 'EN', label: 'EN #1' },
+  { key: 'EN2', country: 'EN', label: 'EN #2' },
+];
+
+let FILTERS = [...STATIC_FILTERS];
 
 let allChannels = [];
 let flags = {};
@@ -149,13 +160,17 @@ function proxyUrlFor(channel) {
   return `/proxy/${encodeURIComponent(channel.id)}`;
 }
 
+function matchesFilter(channel, key) {
+  if (key === 'all') return true;
+  if (key === 'fav') return favorites.has(channel.id);
+  if (channel.bouquet) return channel.bouquet === key;
+  return channel.country === key;
+}
+
 function visibleChannels() {
   const q = searchText.trim().toLowerCase();
   return allChannels.filter((c) => {
-    if (activeFilter === 'fav' && !favorites.has(c.id)) return false;
-    if (['LV', 'RU', 'UA', 'EN'].includes(activeFilter) && c.country !== activeFilter) {
-      return false;
-    }
+    if (!matchesFilter(c, activeFilter)) return false;
     if (
       q &&
       !`${c.name} ${c.category} ${c.tagline || ''} ${c.language || ''}`
@@ -168,6 +183,16 @@ function visibleChannels() {
   });
 }
 
+function buildFilters(bouquetList, flagMap) {
+  return [
+    ...STATIC_FILTERS,
+    ...bouquetList.map((b) => ({
+      key: b.key,
+      label: `${flagMap[b.country] || ''} ${b.label}`.trim(),
+    })),
+  ];
+}
+
 function renderFilters() {
   filtersEl.innerHTML = '';
   for (const f of FILTERS) {
@@ -176,7 +201,7 @@ function renderFilters() {
         ? allChannels.length
         : f.key === 'fav'
           ? favorites.size
-          : allChannels.filter((c) => c.country === f.key).length;
+          : allChannels.filter((c) => matchesFilter(c, f.key)).length;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `filter${activeFilter === f.key ? ' active' : ''}`;
@@ -670,9 +695,11 @@ async function init() {
     const data = await fetch('/api/channels').then((r) => r.json());
     flags = data.countryFlags || {};
     allChannels = data.channels;
+    FILTERS = buildFilters(data.bouquets?.length ? data.bouquets : FALLBACK_BOUQUETS, flags);
   } catch {
     flags = { LV: '🇱🇻', RU: '🇷🇺', UA: '🇺🇦', EN: '🇬🇧' };
     allChannels = EMBEDDED_FALLBACK;
+    FILTERS = buildFilters(FALLBACK_BOUQUETS, flags);
     setStatus('warn', 'Rezerves katalogs');
   }
 

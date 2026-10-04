@@ -38,12 +38,29 @@ test('responses include security headers', async () => {
   assert.equal(res.headers.get('x-powered-by'), null);
 });
 
-test('GET /api/channels exposes country flags', async () => {
+test('GET /api/channels exposes country flags and bouquet tabs', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   const body = await res.json();
   assert.ok(body.countryFlags);
   assert.equal(typeof body.countryFlags.LV, 'string');
   assert.equal(typeof body.countryFlags.RU, 'string');
+  assert.ok(Array.isArray(body.bouquets));
+  assert.deepEqual(
+    body.bouquets.map((b) => b.key),
+    ['LV1', 'LV2', 'RU1', 'RU2', 'UA1', 'EN1', 'EN2']
+  );
+});
+
+test('catalogue channels belong to a known bouquet', async () => {
+  const keys = new Set(['LV1', 'LV2', 'RU1', 'RU2', 'UA1', 'EN1', 'EN2']);
+  for (const channel of channels) {
+    assert.ok(keys.has(channel.bouquet), `${channel.id} missing bouquet`);
+  }
+  assert.ok(channels.some((c) => c.id === 'ltv1' && c.bouquet === 'LV1'));
+  assert.ok(channels.some((c) => c.id === 'ru-2x2' && c.bouquet === 'RU2'));
+  assert.ok(channels.some((c) => c.id === 'cgtn-en' && c.bouquet === 'EN2'));
+  assert.ok(channels.some((c) => c.id === 'bloomberg' && c.bouquet === 'EN2'));
+  assert.ok(channels.some((c) => c.id === 'arirang' && c.bouquet === 'EN2'));
 });
 
 test('catalogue leads with the local live mux, not Demo Kanāls', async () => {
