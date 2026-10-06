@@ -111,12 +111,13 @@ body {
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
   gap: 24px;
   padding: 0 28px 24px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  min-width: 0;
 }
 
 .widgets {
@@ -309,6 +310,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .video-wrap {
@@ -479,6 +481,8 @@ body {
   align-self: start;
   position: sticky;
   top: 92px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel-head {
@@ -521,6 +525,8 @@ body {
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: thin;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filter {
@@ -684,7 +690,7 @@ body {
     padding: 12px 16px;
   }
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     padding: 0 16px 16px;
     gap: 16px;
   }

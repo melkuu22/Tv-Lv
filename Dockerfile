@@ -11,12 +11,17 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0
 WORKDIR /app
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # Run as the non-root user that ships with the base image.
 COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node package.json ./
-COPY --chown=node:node server.js proxy.js ./
+COPY --chown=node:node server.js proxy.js live-mux.js ./
 COPY --chown=node:node data ./data
 COPY --chown=node:node public ./public
+COPY --chown=node:node scripts ./scripts
 
 USER node
 EXPOSE 3000

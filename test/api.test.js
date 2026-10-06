@@ -158,6 +158,13 @@ test('GET /api/health reports the live mux status', async () => {
   assert.equal(typeof body.live.ready, 'boolean');
 });
 
+test('GET /live/index.m3u8 is a clear error when the mux is not ready', async () => {
+  const res = await fetch(`${baseUrl}/live/index.m3u8`);
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.ok(body.error);
+});
+
 test('France 24 English is proxied so relative live segments stay same-origin', async () => {
   const res = await fetch(`${baseUrl}/api/channels/france24-en`);
   assert.equal(res.status, 200);

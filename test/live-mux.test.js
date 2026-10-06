@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { pickUpstream, liveMuxStatus } from '../live-mux.js';
+process.env.NODE_ENV = 'test';
+import { pickUpstream, liveMuxStatus, installMuxChildForTest, createFakeMuxChild, LIVE_DIR } from '../live-mux.js';
 
 test('pickUpstream returns the first HTTP 200 candidate', async () => {
   const calls = [];
@@ -25,4 +26,18 @@ test('pickUpstream skips non-http and exhausted lists', async () => {
 test('live mux is idle under the test runner', () => {
   const status = liveMuxStatus();
   assert.equal(status.running, false);
+  assert.match(LIVE_DIR, /tv-lv-live-/);
+});
+
+test('missing ffmpeg is reported instead of crashing the process', () => {
+  const child = createFakeMuxChild();
+  installMuxChildForTest(child, { args: [], label: 'synthetic' });
+  assert.doesNotThrow(() => {
+    child.emit('error', Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' }));
+  });
+  const status = liveMuxStatus();
+  assert.equal(status.running, false);
+  assert.equal(status.ready, false);
+  assert.equal(status.error, 'ffmpeg_missing');
+  assert.equal(status.source, null);
 });

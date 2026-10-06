@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isBlockedHost, isBlockedTarget, rewritePlaylist } from '../proxy.js';
+import { isBlockedHost, isBlockedIp, isBlockedTarget, rewritePlaylist, fetchFollow, assertSafeUrl } from '../proxy.js';
 import { isPlayable, isProxyable, shouldProxy } from '../data/channels.js';
 
 test('rewritePlaylist rewrites segment and key URIs through the proxy', () => {
@@ -45,6 +45,76 @@ test('isBlockedHost covers loopback, RFC1918, link-local and IPv6 ULA', () => {
 test('isBlockedTarget rejects non-http schemes', () => {
   assert.equal(isBlockedTarget(new URL('https://cdn.example.com/a.m3u8')), false);
   assert.equal(isBlockedTarget(new URL('file:///etc/passwd')), true);
+});
+
+test('assertSafeUrl blocks hostnames that resolve to loopback', async () => {
+  await assert.rejects(
+    () =>
+      assertSafeUrl(new URL('https://localtest.me/x.m3u8'), {
+        lookupFn: async () => [{ address: '127.0.0.1', family: 4 }],
+      }),
+    (err) => err.code === 'BLOCKED'
+  );
+  await assert.rejects(
+    () =>
+      assertSafeUrl(new URL('https://evil.example/x.m3u8'), {
+        lookupFn: async () => [
+          { address: '1.1.1.1', family: 4 },
+          { address: '169.254.169.254', family: 4 },
+        ],
+      }),
+    (err) => err.code === 'BLOCKED'
+  );
+  await assertSafeUrl(new URL('https://cdn.example.com/a.m3u8'), {
+    lookupFn: async () => [{ address: '8.8.8.8', family: 4 }],
+  });
+});
+
+test('fetchFollow blocks private/loopback redirect hops', async () => {
+  const calls = [];
+  const fetchImpl = async (href) => {
+    calls.push(href);
+    if (href.startsWith('https://cdn.example/start')) {
+      return {
+        status: 302,
+        headers: { get: (n) => (n === 'location' ? 'http://127.0.0.1/secret.m3u8' : null) },
+      };
+    }
+    throw new Error(`unexpected fetch ${href}`);
+  };
+  const lookupFn = async (host) => {
+    if (host === 'cdn.example') return [{ address: '93.184.216.34', family: 4 }];
+    return [{ address: '127.0.0.1', family: 4 }];
+  };
+  await assert.rejects(
+    () =>
+      fetchFollow(new URL('https://cdn.example/start.m3u8'), {}, undefined, 0, {
+        fetchImpl,
+        lookupFn,
+      }),
+    (err) => err.code === 'BLOCKED'
+  );
+  assert.deepEqual(calls, ['https://cdn.example/start.m3u8']);
+});
+
+test('fetchFollow returns {response, finalUrl} when a 3xx has no Location', async () => {
+  const fetchImpl = async () => ({
+    status: 302,
+    headers: { get: () => null },
+  });
+  const lookupFn = async () => [{ address: '8.8.8.8', family: 4 }];
+  const out = await fetchFollow(new URL('https://cdn.example/gone.m3u8'), {}, undefined, 0, {
+    fetchImpl,
+    lookupFn,
+  });
+  assert.equal(out.response.status, 302);
+  assert.equal(out.finalUrl, 'https://cdn.example/gone.m3u8');
+});
+
+test('isBlockedIp treats multicast and unspecified v4 as blocked', () => {
+  assert.equal(isBlockedIp('0.0.0.0'), true);
+  assert.equal(isBlockedIp('224.0.0.1'), true);
+  assert.equal(isBlockedIp('8.8.8.8'), false);
 });
 
 test('catalogue helpers: remotes are proxied, local mux is not', () => {

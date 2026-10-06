@@ -1,21 +1,33 @@
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const LIVE_DIR = process.env.LIVE_DIR || path.join(os.tmpdir(), 'tv-lv-live');
+function createLiveDir() {
+  if (process.env.LIVE_DIR) {
+    fs.mkdirSync(process.env.LIVE_DIR, { recursive: true });
+    return process.env.LIVE_DIR;
+  }
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'tv-lv-live-'));
+}
+
+export const LIVE_DIR = createLiveDir();
 export const LIVE_PLAYLIST = path.join(LIVE_DIR, 'index.m3u8');
 
 let ffmpeg = null;
 let currentSource = null;
 let restarts = 0;
+let muxError = null;
 
 export function liveMuxStatus() {
+  const running = Boolean(ffmpeg && ffmpeg.exitCode == null);
   return {
-    running: Boolean(ffmpeg && ffmpeg.exitCode === null),
-    ready: fs.existsSync(LIVE_PLAYLIST),
+    running,
+    ready: running && fs.existsSync(LIVE_PLAYLIST),
     source: currentSource,
     restarts,
+    error: muxError,
   };
 }
 
@@ -110,16 +122,24 @@ function ffmpegSyntheticArgs() {
   ];
 }
 
-function spawnMux(args, label) {
-  ensureDir();
-  currentSource = label;
-  ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  ffmpeg.stderr.on('data', () => {});
-  ffmpeg.on('exit', (code) => {
-    ffmpeg = null;
+/** Attach spawn/exit handlers. Exported so tests can emit a missing-binary error. */
+export function bindMuxProcess(child, { args, label }) {
+  child.stderr?.on?.('data', () => {});
+  child.on('error', (err) => {
+    muxError = err?.code === 'ENOENT' ? 'ffmpeg_missing' : 'ffmpeg_error';
+    if (process.env.NODE_ENV !== 'test') {
+      console.error('[live-mux] ffmpeg failed to start:', err?.message || err);
+    }
+    if (ffmpeg === child) ffmpeg = null;
+    currentSource = null;
+  });
+  child.on('exit', (code) => {
+    if (ffmpeg === child) ffmpeg = null;
+    if (muxError === 'ffmpeg_missing') return;
     restarts += 1;
     if (process.env.NODE_ENV === 'test') return;
     setTimeout(() => {
+      if (ffmpeg) return;
       if (label !== 'synthetic' && code !== 0) {
         spawnMux(ffmpegSyntheticArgs(), 'synthetic');
       } else {
@@ -127,6 +147,15 @@ function spawnMux(args, label) {
       }
     }, 1200);
   });
+}
+
+function spawnMux(args, label) {
+  ensureDir();
+  currentSource = label;
+  muxError = null;
+  const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  ffmpeg = child;
+  bindMuxProcess(child, { args, label });
 }
 
 export async function startLiveMux(candidateUrls = []) {
@@ -144,7 +173,32 @@ export async function startLiveMux(candidateUrls = []) {
 export function stopLiveMux() {
   if (ffmpeg) {
     ffmpeg.removeAllListeners('exit');
-    ffmpeg.kill('SIGTERM');
+    ffmpeg.removeAllListeners('error');
+    try {
+      ffmpeg.kill('SIGTERM');
+    } catch {
+      /* already gone */
+    }
     ffmpeg = null;
   }
+}
+
+export function createFakeMuxChild() {
+  const child = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.exitCode = null;
+  child.kill = () => {
+    child.exitCode = 1;
+    child.emit('exit', 1);
+  };
+  return child;
+}
+
+/** Test helper: attach a fake child as the current mux process. */
+export function installMuxChildForTest(child, meta = { args: [], label: 'test' }) {
+  ffmpeg = child;
+  currentSource = meta.label;
+  muxError = null;
+  bindMuxProcess(child, meta);
+  return child;
 }

@@ -294,6 +294,31 @@ function markActive(id) {
   }
 }
 
+function showNowPlaying(channel, { tagline } = {}) {
+  npLogo.textContent = channel.logo;
+  npLogo.style.background = channel.color;
+  npName.textContent = channel.name;
+  npTagline.textContent = tagline || channel.tagline;
+  npBadge.hidden = !channel.live || channel.available === false;
+  npBadge.textContent = channel.available === false ? 'NAV PIEEJAMS' : '● TIEŠRAIDE';
+  npBadge.classList.toggle('off', channel.available === false);
+  updateFavButton();
+}
+
+function showHouseLiveFallback() {
+  const retv = channelById('retv');
+  if (!retv) {
+    npTagline.textContent = 'Rezerves avots — Re:TV';
+    return;
+  }
+  activeChannel = retv;
+  markActive(retv.id);
+  showNowPlaying(retv, {
+    tagline: 'Rezerves avots — Latvijas.tv Live nebija pieejama',
+  });
+  setOverlay('Pārslēdzos uz Re:TV…');
+}
+
 function showUnmute(show) {
   unmuteBtn.hidden = !show;
 }
@@ -495,6 +520,9 @@ async function applyRecovery(error) {
 
   if (action === RECOVERY.FALLBACK_PROXY && fallbackSrc && fallbackSrc !== currentSrc) {
     currentSrc = fallbackSrc;
+    if (activeChannel?.local || activeChannel?.id === 'house-live') {
+      showHouseLiveFallback();
+    }
     startSource(currentSrc, generation, activeChannel);
     return;
   }
@@ -545,14 +573,7 @@ function playChannel(channel) {
     /* ignore */
   }
 
-  npLogo.textContent = channel.logo;
-  npLogo.style.background = channel.color;
-  npName.textContent = channel.name;
-  npTagline.textContent = channel.tagline;
-  npBadge.hidden = !channel.live || channel.available === false;
-  npBadge.textContent = channel.available === false ? 'NAV PIEEJAMS' : '● TIEŠRAIDE';
-  npBadge.classList.toggle('off', channel.available === false);
-  updateFavButton();
+  showNowPlaying(channel);
 
   stopPlayback();
 

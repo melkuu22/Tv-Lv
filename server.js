@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import { channels, findChannel, countryFlags, bouquets, shouldProxy, isPlayable } from './data/channels.js';
 import { createProxyHandler } from './proxy.js';
-import { LIVE_DIR, liveMuxStatus, startLiveMux } from './live-mux.js';
+import { LIVE_DIR, liveMuxStatus, startLiveMux, stopLiveMux } from './live-mux.js';
 import { fetchRigaWeather } from './public/widgets.js';
 
 // Same-origin play: local mux at /live, everything else through /proxy/:id.
@@ -58,6 +58,12 @@ app.use(
 );
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/live/index.m3u8', (req, res, next) => {
+  const live = liveMuxStatus();
+  if (live.ready) return next();
+  res.status(503).json({ error: live.error || 'live_unavailable' });
+});
 
 app.use(
   '/live',
@@ -114,9 +120,16 @@ if (isMain) {
   startLiveMux(remotes).catch((err) => {
     console.error('live mux failed to start', err);
   });
-  app.listen(PORT, HOST, () => {
+  const httpServer = app.listen(PORT, HOST, () => {
     console.log(`Latvijas.tv free is running at http://${HOST}:${PORT}`);
   });
+  const shutdown = () => {
+    stopLiveMux();
+    httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 export default app;

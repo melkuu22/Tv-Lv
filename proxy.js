@@ -1,3 +1,5 @@
+import { lookup as dnsLookup } from 'node:dns/promises';
+import net from 'node:net';
 import { Readable } from 'node:stream';
 
 import { findChannel, isProxyable } from './data/channels.js';
@@ -82,8 +84,48 @@ export function isBlockedHost(hostname) {
   return false;
 }
 
+export function isBlockedIp(address) {
+  const ip = String(address || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!ip) return true;
+  if (isBlockedHost(ip)) return true;
+  if (net.isIP(ip) === 4) {
+    const parts = ip.split('.').map((n) => Number(n));
+    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+      return true;
+    }
+    if (parts[0] === 0) return true;
+    if (parts[0] >= 224) return true;
+  }
+  return false;
+}
+
 export function isBlockedTarget(url) {
   return !/^https?:$/.test(url.protocol) || isBlockedHost(url.hostname);
+}
+
+export async function assertSafeUrl(url, { lookupFn = dnsLookup } = {}) {
+  if (isBlockedTarget(url)) {
+    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
+  }
+  const host = String(url.hostname || '').replace(/^\[|\]$/g, '');
+  let records;
+  try {
+    if (net.isIP(host)) {
+      records = [{ address: host }];
+    } else {
+      records = await lookupFn(host, { all: true });
+    }
+  } catch (err) {
+    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED', cause: err });
+  }
+  if (!records?.length) {
+    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
+  }
+  for (const { address } of records) {
+    if (isBlockedIp(address) || isBlockedHost(address)) {
+      throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
+    }
+  }
 }
 
 export function looksLikePlaylist(url, contentType, body) {
@@ -122,25 +164,24 @@ export function rewritePlaylist(text, baseUrl, channelId) {
     .join('\n');
 }
 
-async function fetchFollow(url, headers, signal, hops = 0) {
+export async function fetchFollow(url, headers, signal, hops = 0, deps = {}) {
+  const { fetchImpl = fetch, lookupFn = dnsLookup } = deps;
   if (hops > MAX_REDIRECTS) {
     throw Object.assign(new Error('too_many_redirects'), { code: 'REDIRECTS' });
   }
-  if (isBlockedTarget(url)) {
-    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
-  }
+  await assertSafeUrl(url, { lookupFn });
 
-  const upstream = await fetch(url.href, { headers, signal, redirect: 'manual' });
+  const upstream = await fetchImpl(url.href, { headers, signal, redirect: 'manual' });
   if (upstream.status >= 300 && upstream.status < 400) {
     const location = upstream.headers.get('location');
-    if (!location) return upstream;
+    if (!location) return { response: upstream, finalUrl: url.href };
     let next;
     try {
       next = new URL(location, url);
     } catch {
       throw Object.assign(new Error('bad_redirect'), { code: 'BLOCKED' });
     }
-    return fetchFollow(next, headers, signal, hops + 1);
+    return fetchFollow(next, headers, signal, hops + 1, deps);
   }
   return { response: upstream, finalUrl: url.href };
 }
