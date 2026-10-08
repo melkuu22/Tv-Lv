@@ -1,7 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isBlockedHost, isBlockedIp, isBlockedTarget, rewritePlaylist, fetchFollow, assertSafeUrl } from '../proxy.js';
+import {
+  isBlockedHost,
+  isBlockedIp,
+  isBlockedTarget,
+  rewritePlaylist,
+  fetchFollow,
+  assertSafeUrl,
+  createPinnedLookup,
+} from '../proxy.js';
 import { isPlayable, isProxyable, shouldProxy } from '../data/channels.js';
 
 test('rewritePlaylist rewrites segment and key URIs through the proxy', () => {
@@ -199,9 +207,88 @@ test('assertSafeUrl blocks hostnames that resolve to loopback, CGNAT or metadata
     () => assertSafeUrl(new URL('http://metadata.google.internal/computeMetadata/v1/')),
     (err) => err.code === 'BLOCKED'
   );
-  await assertSafeUrl(new URL('https://cdn.example.com/a.m3u8'), {
+  const allowed = await assertSafeUrl(new URL('https://cdn.example.com/a.m3u8'), {
     lookupFn: async () => [{ address: '8.8.8.8', family: 4 }],
   });
+  assert.deepEqual(allowed, [{ address: '8.8.8.8', family: 4 }]);
+});
+
+test('createPinnedLookup never follows a later DNS answer', () => {
+  const lookup = createPinnedLookup([{ address: '93.184.216.34', family: 4 }]);
+  const once = (opts) =>
+    new Promise((resolve, reject) => {
+      lookup('rebinder.example', opts, (err, address, family) => {
+        if (err) reject(err);
+        else resolve({ address, family });
+      });
+    });
+  return Promise.all([
+    once({}).then((r) => {
+      assert.deepEqual(r, { address: '93.184.216.34', family: 4 });
+    }),
+    new Promise((resolve, reject) => {
+      lookup('rebinder.example', { all: true }, (err, list) => {
+        if (err) reject(err);
+        else resolve(list);
+      });
+    }).then((list) => {
+      assert.deepEqual(list, [{ address: '93.184.216.34', family: 4 }]);
+    }),
+  ]);
+});
+
+test('fetchFollow pins the hop to the first-pass DNS records', async () => {
+  let lookups = 0;
+  const seen = [];
+  const fetchImpl = async (href, opts) => {
+    seen.push({ href, records: opts.records });
+    return { status: 200, headers: { get: () => null } };
+  };
+  const lookupFn = async () => {
+    lookups += 1;
+    if (lookups === 1) return [{ address: '1.1.1.1', family: 4 }];
+    return [{ address: '127.0.0.1', family: 4 }];
+  };
+  const out = await fetchFollow(new URL('https://cdn.example/a.m3u8'), {}, undefined, 0, {
+    fetchImpl,
+    lookupFn,
+  });
+  assert.equal(out.response.status, 200);
+  assert.equal(lookups, 1);
+  assert.deepEqual(seen, [
+    {
+      href: 'https://cdn.example/a.m3u8',
+      records: [{ address: '1.1.1.1', family: 4 }],
+    },
+  ]);
+});
+
+test('fetchFollow pins every redirect hop independently', async () => {
+  const seen = [];
+  const fetchImpl = async (href, opts) => {
+    seen.push({ href, records: opts.records });
+    if (href.includes('/start')) {
+      return {
+        status: 302,
+        headers: { get: (n) => (n === 'location' ? 'https://cdn2.example/next.m3u8' : null) },
+      };
+    }
+    return { status: 200, headers: { get: () => null } };
+  };
+  const lookupFn = async (host) => {
+    if (host === 'cdn.example') return [{ address: '93.184.216.34', family: 4 }];
+    if (host === 'cdn2.example') return [{ address: '1.0.0.1', family: 4 }];
+    return [{ address: '127.0.0.1', family: 4 }];
+  };
+  const out = await fetchFollow(new URL('https://cdn.example/start.m3u8'), {}, undefined, 0, {
+    fetchImpl,
+    lookupFn,
+  });
+  assert.equal(out.response.status, 200);
+  assert.deepEqual(seen, [
+    { href: 'https://cdn.example/start.m3u8', records: [{ address: '93.184.216.34', family: 4 }] },
+    { href: 'https://cdn2.example/next.m3u8', records: [{ address: '1.0.0.1', family: 4 }] },
+  ]);
 });
 
 test('fetchFollow blocks private/loopback redirect hops', async () => {

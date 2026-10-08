@@ -1,4 +1,6 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import { Readable } from 'node:stream';
 
@@ -266,6 +268,18 @@ export function isBlockedTarget(url) {
   return !/^https?:$/.test(url.protocol) || isBlockedHost(url.hostname);
 }
 
+function recordFamily(address, family) {
+  if (family === 4 || family === 6) return family;
+  return net.isIP(String(address).replace(/^\[|\]$/g, '')) === 6 ? 6 : 4;
+}
+
+function normalizeRecords(records) {
+  return (records || []).map((r) => ({
+    address: String(r.address || '').replace(/^\[|\]$/g, ''),
+    family: recordFamily(r.address, r.family),
+  }));
+}
+
 export async function assertSafeUrl(url, { lookupFn = dnsLookup } = {}) {
   if (isBlockedTarget(url)) {
     throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
@@ -274,7 +288,7 @@ export async function assertSafeUrl(url, { lookupFn = dnsLookup } = {}) {
   let records;
   try {
     if (net.isIP(host)) {
-      records = [{ address: host }];
+      records = [{ address: host, family: net.isIP(host) }];
     } else {
       records = await lookupFn(host, { all: true });
     }
@@ -284,11 +298,88 @@ export async function assertSafeUrl(url, { lookupFn = dnsLookup } = {}) {
   if (!records?.length) {
     throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
   }
-  for (const { address } of records) {
-    if (isBlockedIp(address) || isBlockedHost(address)) {
+  const allowed = [];
+  for (const rec of records) {
+    if (isBlockedIp(rec.address) || isBlockedHost(rec.address)) {
       throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
     }
+    allowed.push({ address: rec.address, family: recordFamily(rec.address, rec.family) });
   }
+  return allowed;
+}
+
+// Connect only to IPs already checked by assertSafeUrl. A later DNS answer
+// (TTL 0 / rebinding) must not replace them.
+export function createPinnedLookup(records) {
+  const pinned = normalizeRecords(records).filter((r) => r.address);
+  return function pinnedLookup(_hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    if (!pinned.length) {
+      callback(Object.assign(new Error('blocked_target'), { code: 'ENOTFOUND' }));
+      return;
+    }
+    if (options?.all) {
+      callback(
+        null,
+        pinned.map((r) => ({ address: r.address, family: r.family }))
+      );
+      return;
+    }
+    callback(null, pinned[0].address, pinned[0].family);
+  };
+}
+
+function wrapIncomingMessage(res) {
+  const headers = {
+    get(name) {
+      const v = res.headers[String(name).toLowerCase()];
+      if (v == null) return null;
+      return Array.isArray(v) ? v.join(', ') : String(v);
+    },
+  };
+  let consumed = false;
+  return {
+    status: res.statusCode,
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+    headers,
+    get body() {
+      if (consumed) return null;
+      consumed = true;
+      return Readable.toWeb(res);
+    },
+    async text() {
+      if (consumed) throw new Error('body already used');
+      consumed = true;
+      const chunks = [];
+      for await (const chunk of res) chunks.push(Buffer.from(chunk));
+      return Buffer.concat(chunks).toString('utf8');
+    },
+  };
+}
+
+export function pinnedHttpFetch(href, { headers = {}, signal, records } = {}) {
+  const url = new URL(href);
+  const lib = url.protocol === 'https:' ? https : http;
+  const host = String(url.hostname || '').replace(/^\[|\]$/g, '');
+  return new Promise((resolve, reject) => {
+    const req = lib.request(
+      url,
+      {
+        method: 'GET',
+        headers,
+        signal,
+        agent: false,
+        lookup: createPinnedLookup(records),
+        servername: url.protocol === 'https:' && !net.isIP(host) ? host : undefined,
+      },
+      (res) => resolve(wrapIncomingMessage(res))
+    );
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 export function looksLikePlaylist(url, contentType, body) {
@@ -328,13 +419,14 @@ export function rewritePlaylist(text, baseUrl, channelId) {
 }
 
 export async function fetchFollow(url, headers, signal, hops = 0, deps = {}) {
-  const { fetchImpl = fetch, lookupFn = dnsLookup } = deps;
+  const { fetchImpl, lookupFn = dnsLookup } = deps;
   if (hops > MAX_REDIRECTS) {
     throw Object.assign(new Error('too_many_redirects'), { code: 'REDIRECTS' });
   }
-  await assertSafeUrl(url, { lookupFn });
+  const records = await assertSafeUrl(url, { lookupFn });
+  const fetchFn = fetchImpl || pinnedHttpFetch;
 
-  const upstream = await fetchImpl(url.href, { headers, signal, redirect: 'manual' });
+  const upstream = await fetchFn(url.href, { headers, signal, redirect: 'manual', records });
   if (upstream.status >= 300 && upstream.status < 400) {
     const location = upstream.headers.get('location');
     if (!location) return { response: upstream, finalUrl: url.href };

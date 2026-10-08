@@ -230,4 +230,5 @@ test('proxy accepts a public https target URL for a proxyable channel', async ()
   // Must not be the SSRF 400 — either upstream fetch works or fails as 502/non-400.
   assert.notEqual(res.status, 400);
   assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  await res.arrayBuffer();
 });
