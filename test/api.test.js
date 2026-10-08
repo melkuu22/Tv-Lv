@@ -38,19 +38,37 @@ test('responses include security headers', async () => {
   assert.equal(res.headers.get('x-powered-by'), null);
 });
 
-test('GET /api/channels exposes country flags', async () => {
+test('GET /api/channels exposes country flags and bouquet tabs', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   const body = await res.json();
   assert.ok(body.countryFlags);
   assert.equal(typeof body.countryFlags.LV, 'string');
   assert.equal(typeof body.countryFlags.RU, 'string');
+  assert.ok(Array.isArray(body.bouquets));
+  assert.deepEqual(
+    body.bouquets.map((b) => b.key),
+    ['LV1', 'LV2', 'RU1', 'RU2', 'UA1', 'EN1', 'EN2']
+  );
 });
 
-test('catalogue leads with a live channel, not Demo Kanāls', async () => {
+test('catalogue channels belong to a known bouquet', async () => {
+  const keys = new Set(['LV1', 'LV2', 'RU1', 'RU2', 'UA1', 'EN1', 'EN2']);
+  for (const channel of channels) {
+    assert.ok(keys.has(channel.bouquet), `${channel.id} missing bouquet`);
+  }
+  assert.ok(channels.some((c) => c.id === 'ltv1' && c.bouquet === 'LV1'));
+  assert.ok(channels.some((c) => c.id === 'ru-2x2' && c.bouquet === 'RU2'));
+  assert.ok(channels.some((c) => c.id === 'cgtn-en' && c.bouquet === 'EN2'));
+  assert.ok(channels.some((c) => c.id === 'bloomberg' && c.bouquet === 'EN2'));
+  assert.ok(channels.some((c) => c.id === 'arirang' && c.bouquet === 'EN2'));
+});
+
+test('catalogue leads with the local live mux, not Demo Kanāls', async () => {
   const res = await fetch(`${baseUrl}/api/channels`);
   const body = await res.json();
-  assert.equal(body.channels[0].id, 'retv');
+  assert.equal(body.channels[0].id, 'house-live');
   assert.equal(body.channels[0].live, true);
+  assert.equal(body.channels[0].playUrl, '/live/index.m3u8');
   assert.equal(body.channels.at(-1).id, 'demo');
   assert.equal(body.channels.at(-1).live, false);
 });
@@ -66,9 +84,12 @@ test('GET /api/channels returns the catalogue', async () => {
     assert.ok(channel.name);
     if (channel.available === false) {
       assert.equal(channel.playUrl, null);
+    } else if (channel.local) {
+      assert.match(channel.stream, /^\/live\/.+\.m3u8/);
+      assert.equal(channel.playUrl, channel.stream);
     } else {
       assert.match(channel.stream, /^https?:\/\/.+\.m3u8/);
-      assert.ok(channel.playUrl, `expected playUrl for ${channel.id}`);
+      assert.equal(channel.playUrl, `/proxy/${channel.id}`);
     }
   }
 });
@@ -109,13 +130,39 @@ test('GET /api/channels/:id 404s for unknown channel', async () => {
   assert.equal(res.status, 404);
 });
 
-test('Demo Kanāls is always playable without the proxy', async () => {
+test('Demo Kanāls is playable through the same-origin proxy', async () => {
   const res = await fetch(`${baseUrl}/api/channels/demo`);
   const body = await res.json();
   assert.equal(body.available, undefined);
-  assert.equal(body.proxy, undefined);
   assert.match(body.stream, /^https:\/\/test-streams\.mux\.dev\/.+\.m3u8/);
-  assert.equal(body.playUrl, body.stream);
+  assert.equal(body.playUrl, '/proxy/demo');
+});
+
+test('GET /api/weather returns Riga weather or a structured failure', async () => {
+  const res = await fetch(`${baseUrl}/api/weather`);
+  const body = await res.json();
+  assert.ok(body.city === 'Rīga' || body.city === 'Riga');
+  if (res.status === 200) {
+    assert.ok(body.figure);
+    assert.ok(Array.isArray(body.daily));
+  } else {
+    assert.equal(res.status, 502);
+    assert.equal(body.error, 'weather_unavailable');
+  }
+});
+
+test('GET /api/health reports the live mux status', async () => {
+  const res = await fetch(`${baseUrl}/api/health`);
+  const body = await res.json();
+  assert.ok(body.live);
+  assert.equal(typeof body.live.ready, 'boolean');
+});
+
+test('GET /live/index.m3u8 is a clear error when the mux is not ready', async () => {
+  const res = await fetch(`${baseUrl}/live/index.m3u8`);
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.ok(body.error);
 });
 
 test('France 24 English is proxied so relative live segments stay same-origin', async () => {
@@ -148,6 +195,19 @@ test('proxy SSRF guard blocks private and non-http targets', async () => {
     'http://192.168.1.1/secret.m3u8',
     'http://172.16.0.1/secret.m3u8',
     'http://169.254.169.254/latest/meta-data',
+    'http://100.64.1.1/secret.m3u8',
+    'http://100.100.100.200/latest/meta-data',
+    'http://[::ffff:100.64.1.1]/secret.m3u8',
+    'http://[::ffff:6440:101]/secret.m3u8',
+    'http://[fd00:ec2::254]/latest/meta-data',
+    'http://metadata.google.internal/computeMetadata/v1/',
+    'http://0x64400101/secret.m3u8',
+    'http://1681916161/secret.m3u8',
+    'http://0144.0100.01.01/secret.m3u8',
+    'http://192.0.0.8/x.m3u8',
+    'http://198.18.0.1/x.m3u8',
+    'http://240.0.0.1/x.m3u8',
+    'http://0.1.2.3/x.m3u8',
     'http://[::1]/secret.m3u8',
     'http://[::ffff:127.0.0.1]/secret.m3u8',
     'http://[fe80::1]/secret.m3u8',
@@ -170,4 +230,5 @@ test('proxy accepts a public https target URL for a proxyable channel', async ()
   // Must not be the SSRF 400 — either upstream fetch works or fails as 502/non-400.
   assert.notEqual(res.status, 400);
   assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  await res.arrayBuffer();
 });

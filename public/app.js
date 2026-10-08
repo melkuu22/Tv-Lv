@@ -8,6 +8,7 @@ import {
   isLivePlayable,
   pickStartupChannel,
 } from './playback.js';
+import { mountWidgets } from './widgets-ui.js';
 
 const video = document.getElementById('video');
 const overlay = document.getElementById('video-overlay');
@@ -34,14 +35,64 @@ const LS_LAST = 'tvlv:last';
 const WATCHDOG_MS = 2000;
 const STALL_TICKS = 3;
 
-const FILTERS = [
+const EMBEDDED_FALLBACK = [
+  {
+    id: 'house-live',
+    name: 'Latvijas.tv Live',
+    tagline: 'Servera tiešraide — vienmēr pieejama',
+    category: 'Tiešraide',
+    language: 'Latviešu',
+    country: 'LV',
+    logo: '📡',
+    color: '#22c55e',
+    live: true,
+    bouquet: 'LV1',
+    playUrl: '/live/index.m3u8',
+  },
+  {
+    id: 'retv',
+    name: 'Re:TV',
+    tagline: 'Latvijas reģionālā televīzija',
+    category: 'Vispārīgs',
+    language: 'Latviešu',
+    country: 'LV',
+    logo: '🟥',
+    color: '#e11d48',
+    live: true,
+    bouquet: 'LV1',
+    playUrl: '/proxy/retv',
+  },
+  {
+    id: 'aljazeera-en',
+    name: 'Al Jazeera English',
+    tagline: 'International news in English',
+    category: 'Ziņas',
+    language: 'English',
+    country: 'EN',
+    logo: '🌍',
+    color: '#b45309',
+    live: true,
+    bouquet: 'EN1',
+    playUrl: '/proxy/aljazeera-en',
+  },
+];
+
+const STATIC_FILTERS = [
   { key: 'all', label: 'Visi' },
   { key: 'fav', label: '★ Izlase' },
-  { key: 'LV', label: '🇱🇻 LV' },
-  { key: 'RU', label: '🇷🇺 RU' },
-  { key: 'UA', label: '🇺🇦 UA' },
-  { key: 'EN', label: '🇬🇧 EN' },
 ];
+
+const FALLBACK_BOUQUETS = [
+  { key: 'LV1', country: 'LV', label: 'LV #1' },
+  { key: 'LV2', country: 'LV', label: 'LV #2' },
+  { key: 'RU1', country: 'RU', label: 'RU #1' },
+  { key: 'RU2', country: 'RU', label: 'RU #2' },
+  { key: 'UA1', country: 'UA', label: 'UA #1' },
+  { key: 'EN1', country: 'EN', label: 'EN #1' },
+  { key: 'EN2', country: 'EN', label: 'EN #2' },
+];
+
+let FILTERS = [...STATIC_FILTERS];
 
 let allChannels = [];
 let flags = {};
@@ -104,16 +155,23 @@ function channelById(id) {
 }
 
 function proxyUrlFor(channel) {
+  if (channel.local || channel.id === 'house-live') {
+    return '/proxy/retv';
+  }
   return `/proxy/${encodeURIComponent(channel.id)}`;
+}
+
+function matchesFilter(channel, key) {
+  if (key === 'all') return true;
+  if (key === 'fav') return favorites.has(channel.id);
+  if (channel.bouquet) return channel.bouquet === key;
+  return channel.country === key;
 }
 
 function visibleChannels() {
   const q = searchText.trim().toLowerCase();
   return allChannels.filter((c) => {
-    if (activeFilter === 'fav' && !favorites.has(c.id)) return false;
-    if (['LV', 'RU', 'UA', 'EN'].includes(activeFilter) && c.country !== activeFilter) {
-      return false;
-    }
+    if (!matchesFilter(c, activeFilter)) return false;
     if (
       q &&
       !`${c.name} ${c.category} ${c.tagline || ''} ${c.language || ''}`
@@ -126,6 +184,16 @@ function visibleChannels() {
   });
 }
 
+function buildFilters(bouquetList, flagMap) {
+  return [
+    ...STATIC_FILTERS,
+    ...bouquetList.map((b) => ({
+      key: b.key,
+      label: `${flagMap[b.country] || ''} ${b.label}`.trim(),
+    })),
+  ];
+}
+
 function renderFilters() {
   filtersEl.innerHTML = '';
   for (const f of FILTERS) {
@@ -134,7 +202,7 @@ function renderFilters() {
         ? allChannels.length
         : f.key === 'fav'
           ? favorites.size
-          : allChannels.filter((c) => c.country === f.key).length;
+          : allChannels.filter((c) => matchesFilter(c, f.key)).length;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `filter${activeFilter === f.key ? ' active' : ''}`;
@@ -224,6 +292,31 @@ function markActive(id) {
   for (const item of listEl.querySelectorAll('.channel-item')) {
     item.classList.toggle('active', item.dataset.id === id);
   }
+}
+
+function showNowPlaying(channel, { tagline } = {}) {
+  npLogo.textContent = channel.logo;
+  npLogo.style.background = channel.color;
+  npName.textContent = channel.name;
+  npTagline.textContent = tagline || channel.tagline;
+  npBadge.hidden = !channel.live || channel.available === false;
+  npBadge.textContent = channel.available === false ? 'NAV PIEEJAMS' : '● TIEŠRAIDE';
+  npBadge.classList.toggle('off', channel.available === false);
+  updateFavButton();
+}
+
+function showHouseLiveFallback() {
+  const retv = channelById('retv');
+  if (!retv) {
+    npTagline.textContent = 'Rezerves avots — Re:TV';
+    return;
+  }
+  activeChannel = retv;
+  markActive(retv.id);
+  showNowPlaying(retv, {
+    tagline: 'Rezerves avots — Latvijas.tv Live nebija pieejama',
+  });
+  setOverlay('Pārslēdzos uz Re:TV…');
 }
 
 function showUnmute(show) {
@@ -427,6 +520,9 @@ async function applyRecovery(error) {
 
   if (action === RECOVERY.FALLBACK_PROXY && fallbackSrc && fallbackSrc !== currentSrc) {
     currentSrc = fallbackSrc;
+    if (activeChannel?.local || activeChannel?.id === 'house-live') {
+      showHouseLiveFallback();
+    }
     startSource(currentSrc, generation, activeChannel);
     return;
   }
@@ -477,14 +573,7 @@ function playChannel(channel) {
     /* ignore */
   }
 
-  npLogo.textContent = channel.logo;
-  npLogo.style.background = channel.color;
-  npName.textContent = channel.name;
-  npTagline.textContent = channel.tagline;
-  npBadge.hidden = !channel.live || channel.available === false;
-  npBadge.textContent = channel.available === false ? 'NAV PIEEJAMS' : '● TIEŠRAIDE';
-  npBadge.classList.toggle('off', channel.available === false);
-  updateFavButton();
+  showNowPlaying(channel);
 
   stopPlayback();
 
@@ -576,6 +665,20 @@ function setupSessionGuards() {
   });
 }
 
+async function waitForHouseLive(ms = 10000) {
+  const started = Date.now();
+  while (Date.now() - started < ms) {
+    try {
+      const health = await fetch('/api/health').then((r) => r.json());
+      if (health.live?.ready) return true;
+    } catch {
+      /* keep waiting */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return false;
+}
+
 async function init() {
   unmuteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -607,29 +710,50 @@ async function init() {
     setStatus('ok', 'Tiešsaistē');
     statusEl.title = `${health.channels} kanāli`;
   } catch {
-    setStatus('error', 'Serveris nav pieejams');
+    setStatus('warn', 'Lokalais režīms');
   }
 
   try {
     const data = await fetch('/api/channels').then((r) => r.json());
     flags = data.countryFlags || {};
     allChannels = data.channels;
-    renderFilters();
-    renderChannels();
-
-    const lastId = (() => {
-      try {
-        return localStorage.getItem(LS_LAST);
-      } catch {
-        return null;
-      }
-    })();
-    const first = pickStartupChannel(allChannels, lastId);
-    if (first) playChannel(first);
+    FILTERS = buildFilters(data.bouquets?.length ? data.bouquets : FALLBACK_BOUQUETS, flags);
   } catch {
-    setOverlay('Neizdevās ielādēt kanālu sarakstu.', { error: true, retry: true });
-    setStatus('error', 'Kļūda ielādējot kanālus');
+    flags = { LV: '🇱🇻', RU: '🇷🇺', UA: '🇺🇦', EN: '🇬🇧' };
+    allChannels = EMBEDDED_FALLBACK;
+    FILTERS = buildFilters(FALLBACK_BOUQUETS, flags);
+    setStatus('warn', 'Rezerves katalogs');
   }
+
+  renderFilters();
+  renderChannels();
+
+  const lastId = (() => {
+    try {
+      return localStorage.getItem(LS_LAST);
+    } catch {
+      return null;
+    }
+  })();
+  let first = pickStartupChannel(allChannels, lastId);
+  if (first?.id === 'house-live') {
+    setOverlay('Ielādē tiešraidi…');
+    const ready = await waitForHouseLive();
+    if (!ready) {
+      first =
+        allChannels.find((c) => c.id !== 'house-live' && isLivePlayable(c)) || first;
+    }
+  }
+  if (first) playChannel(first);
+
+  mountWidgets({
+    getChannels: () => allChannels,
+    getActiveId: () => activeId,
+    playChannelById: (id) => {
+      const channel = channelById(id);
+      if (channel) playChannel(channel);
+    },
+  });
 }
 
 init();

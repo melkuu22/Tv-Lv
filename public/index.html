@@ -29,6 +29,39 @@
       </div>
     </header>
 
+    <div class="reminder-toast" id="reminder-toast" hidden></div>
+
+    <section class="widgets" aria-label="Laiks, kalendārs un atgādinājumi">
+      <article class="widget widget-clock">
+        <p class="widget-kicker">Pulkstenis</p>
+        <div class="clock-figures" id="clock-time">--:--:--</div>
+        <p id="clock-date" class="widget-muted">Rīga</p>
+      </article>
+      <article class="widget widget-weather">
+        <p class="widget-kicker">Laikapstākļi</p>
+        <div id="weather-widget"><p class="widget-muted">Ielādē laiku…</p></div>
+      </article>
+      <article class="widget widget-calendar">
+        <p class="widget-kicker">Kalendārs</p>
+        <div id="calendar-widget"></div>
+      </article>
+      <article class="widget widget-reminders">
+        <p class="widget-kicker">Atgādinājumi</p>
+        <form id="reminder-form" class="reminder-form">
+          <input
+            id="reminder-text"
+            type="text"
+            maxlength="80"
+            placeholder="Piemēram: skatīties LTV1"
+            aria-label="Atgādinājuma teksts"
+          />
+          <input id="reminder-at" type="datetime-local" required aria-label="Laiks" />
+          <button type="submit">Pievienot</button>
+        </form>
+        <ul id="reminder-list" class="reminder-list"></ul>
+      </article>
+    </section>
+
     <main class="layout">
       <section class="player-panel">
         <div class="video-wrap">

@@ -1,3 +1,7 @@
+import { lookup as dnsLookup } from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import { Readable } from 'node:stream';
 
 import { findChannel, isProxyable } from './data/channels.js';
@@ -49,41 +53,333 @@ function delay(ms, signal) {
   });
 }
 
-// Block obviously-private / loopback hosts to avoid turning the proxy into an
-// SSRF vector. The proxy is already gated to catalogue channels.
+// Cloud metadata hostnames that must never be fetched, even before DNS.
+const METADATA_HOSTS = new Set([
+  'metadata.google.internal',
+  'metadata.google',
+  'metadata',
+]);
+
+// Well-known metadata IPv4s outside (or in addition to) 169.254.0.0/16.
+const METADATA_IPV4 = new Set([
+  '169.254.169.254',
+  '100.100.100.200', // Alibaba
+  '168.63.129.16', // Azure IMDS
+]);
+
+function parseIPv4Number(part) {
+  if (!part) return null;
+  let base = 10;
+  let digits = part;
+  if (part.length >= 2 && part[0] === '0' && (part[1] === 'x' || part[1] === 'X')) {
+    base = 16;
+    digits = part.slice(2);
+  } else if (part.length >= 2 && part[0] === '0') {
+    base = 8;
+    digits = part.slice(1);
+  }
+  if (digits === '') return 0;
+  const alphabet = base === 16 ? /^[0-9a-f]+$/i : base === 8 ? /^[0-7]+$/ : /^[0-9]+$/;
+  if (!alphabet.test(digits)) return null;
+  const n = Number.parseInt(digits, base);
+  if (!Number.isInteger(n) || n < 0 || n > 0xffffffff) return null;
+  return n;
+}
+
+// WHATWG-style IPv4 parser: dotted decimal, octal, hex, and mixed/short forms
+// (127.1, 2130706433, 0x7f000001, 0177.0.0.1) all collapse to four octets.
+function parseIPv4(input) {
+  const parts = String(input).split('.');
+  if (parts.length < 1 || parts.length > 4) return null;
+  const nums = [];
+  for (const part of parts) {
+    const n = parseIPv4Number(part);
+    if (n === null) return null;
+    nums.push(n);
+  }
+  const lastMax = [0xffffffff, 0xffffff, 0xffff, 0xff][parts.length - 1];
+  for (let i = 0; i < nums.length - 1; i++) {
+    if (nums[i] > 0xff) return null;
+  }
+  if (nums[nums.length - 1] > lastMax) return null;
+
+  let addr = nums[nums.length - 1];
+  if (nums.length === 1) {
+    // already a 32-bit value
+  } else if (nums.length === 2) {
+    addr = (nums[0] << 24) + nums[1];
+  } else if (nums.length === 3) {
+    addr = (nums[0] << 24) + (nums[1] << 16) + nums[2];
+  } else {
+    addr = (nums[0] << 24) + (nums[1] << 16) + (nums[2] << 8) + nums[3];
+  }
+  addr >>>= 0;
+  return [(addr >>> 24) & 255, (addr >>> 16) & 255, (addr >>> 8) & 255, addr & 255];
+}
+
+function parseIPv6(input) {
+  let s = String(input).toLowerCase();
+  const zone = s.indexOf('%');
+  if (zone !== -1) s = s.slice(0, zone);
+
+  const dotted = s.match(/:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dotted) {
+    const v4 = parseIPv4(dotted[1]);
+    if (!v4) return null;
+    const hi = ((v4[0] << 8) | v4[1]).toString(16);
+    const lo = ((v4[2] << 8) | v4[3]).toString(16);
+    s = `${s.slice(0, -dotted[1].length)}${hi}:${lo}`;
+  }
+
+  let groups;
+  if (s.includes('::')) {
+    const pieces = s.split('::');
+    if (pieces.length !== 2) return null;
+    const left = pieces[0] === '' ? [] : pieces[0].split(':');
+    const right = pieces[1] === '' ? [] : pieces[1].split(':');
+    if (left.length + right.length > 8) return null;
+    const fill = 8 - left.length - right.length;
+    groups = [...left, ...Array(fill).fill('0'), ...right];
+  } else {
+    groups = s.split(':');
+    if (groups.length !== 8) return null;
+  }
+
+  const hextets = [];
+  for (const g of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    hextets.push(Number.parseInt(g, 16));
+  }
+  return hextets.length === 8 ? hextets : null;
+}
+
+function hextetsToV4(hi, lo) {
+  return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255];
+}
+
+function embeddedIPv4(hextets) {
+  const z = (i) => hextets[i] === 0;
+  // IPv4-mapped ::ffff:0:0/96  (Node rewrites [::ffff:a.b.c.d] to [::ffff:aabb:ccdd])
+  if (z(0) && z(1) && z(2) && z(3) && z(4) && hextets[5] === 0xffff) {
+    return hextetsToV4(hextets[6], hextets[7]);
+  }
+  // IPv4-translated ::ffff:0:0:0/96
+  if (z(0) && z(1) && z(2) && z(3) && hextets[4] === 0xffff && z(5)) {
+    return hextetsToV4(hextets[6], hextets[7]);
+  }
+  // Deprecated IPv4-compatible ::/96, excluding :: and ::1
+  if (z(0) && z(1) && z(2) && z(3) && z(4) && z(5)) {
+    if (!(z(6) && (z(7) || hextets[7] === 1))) {
+      return hextetsToV4(hextets[6], hextets[7]);
+    }
+  }
+  // NAT64 well-known prefix 64:ff9b::/96
+  if (hextets[0] === 0x64 && hextets[1] === 0xff9b && z(2) && z(3) && z(4) && z(5)) {
+    return hextetsToV4(hextets[6], hextets[7]);
+  }
+  return null;
+}
+
+function isBlockedIPv4(octets) {
+  const dotted = octets.join('.');
+  if (METADATA_IPV4.has(dotted)) return true;
+  const a = octets[0];
+  const b = octets[1];
+  const c = octets[2];
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 127) return true; // 127.0.0.0/8
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15
+  if (a >= 224 && a <= 239) return true; // multicast 224.0.0.0/4
+  if (a >= 240) return true; // 240.0.0.0/4 reserved
+  return false;
+}
+
+function isBlockedIPv6(hextets) {
+  const z = (i) => hextets[i] === 0;
+  if (hextets.every((h) => h === 0)) return true; // ::
+  if (z(0) && z(1) && z(2) && z(3) && z(4) && z(5) && z(6) && hextets[7] === 1) return true; // ::1
+  // AWS IMDS IPv6 fd00:ec2::254 (also ULA, listed explicitly).
+  if (
+    hextets[0] === 0xfd00 &&
+    hextets[1] === 0x0ec2 &&
+    z(2) &&
+    z(3) &&
+    z(4) &&
+    z(5) &&
+    z(6) &&
+    hextets[7] === 0x254
+  ) {
+    return true;
+  }
+  const mapped = embeddedIPv4(hextets);
+  if (mapped) return isBlockedIPv4(mapped);
+  if ((hextets[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((hextets[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 ULA
+  if ((hextets[0] & 0xff00) === 0xff00) return true; // ff00::/8 multicast
+  return false;
+}
+
+function looksLikeIpLiteral(h) {
+  if (h.includes(':')) return true;
+  if (net.isIP(h)) return true;
+  // Decimal / octal / hex / short IPv4 that net.isIP does not recognize.
+  return /^(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+)){0,3}$/i.test(h);
+}
+
+// Block private, loopback, CGNAT, metadata, multicast, and reserved hosts so
+// the catalogue-gated proxy cannot be used as an SSRF vector.
 export function isBlockedHost(hostname) {
   if (!hostname) return true;
-  const h = String(hostname).toLowerCase().replace(/^\[|\]$/g, '');
+  const h = String(hostname)
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.+$/, '');
 
   if (h === 'localhost' || h.endsWith('.localhost')) return true;
-  if (h === '0.0.0.0' || h === '::' || h === '::1') return true;
-  if (/^127\./.test(h)) return true;
-  if (/^10\./.test(h)) return true;
-  if (/^192\.168\./.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true;
+  if (METADATA_HOSTS.has(h)) return true;
 
-  const v4dotted = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-  if (v4dotted) return isBlockedHost(v4dotted[1]);
-  // Node rewrites [::ffff:127.0.0.1] to [::ffff:7f00:1].
-  const v4hex = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
-  if (v4hex) {
-    const hi = Number.parseInt(v4hex[1], 16);
-    const lo = Number.parseInt(v4hex[2], 16);
-    return isBlockedHost(`${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`);
-  }
+  const v4 = parseIPv4(h);
+  if (v4) return isBlockedIPv4(v4);
 
-  if (h.includes(':')) {
-    const compacted = h.replace(/^0+/, '').toLowerCase();
-    if (compacted.startsWith('fe80:')) return true;
-    if (compacted.startsWith('fc') || compacted.startsWith('fd')) return true;
-  }
+  const v6 = parseIPv6(h);
+  if (v6) return isBlockedIPv6(v6);
 
+  // Fail closed on IP-shaped strings we could not parse (odd encodings, junk).
+  if (looksLikeIpLiteral(h)) return true;
   return false;
+}
+
+export function isBlockedIp(address) {
+  const ip = String(address || '')
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.+$/, '');
+  if (!ip) return true;
+  return isBlockedHost(ip);
 }
 
 export function isBlockedTarget(url) {
   return !/^https?:$/.test(url.protocol) || isBlockedHost(url.hostname);
+}
+
+function recordFamily(address, family) {
+  if (family === 4 || family === 6) return family;
+  return net.isIP(String(address).replace(/^\[|\]$/g, '')) === 6 ? 6 : 4;
+}
+
+function normalizeRecords(records) {
+  return (records || []).map((r) => ({
+    address: String(r.address || '').replace(/^\[|\]$/g, ''),
+    family: recordFamily(r.address, r.family),
+  }));
+}
+
+export async function assertSafeUrl(url, { lookupFn = dnsLookup } = {}) {
+  if (isBlockedTarget(url)) {
+    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
+  }
+  const host = String(url.hostname || '').replace(/^\[|\]$/g, '');
+  let records;
+  try {
+    if (net.isIP(host)) {
+      records = [{ address: host, family: net.isIP(host) }];
+    } else {
+      records = await lookupFn(host, { all: true });
+    }
+  } catch (err) {
+    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED', cause: err });
+  }
+  if (!records?.length) {
+    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
+  }
+  const allowed = [];
+  for (const rec of records) {
+    if (isBlockedIp(rec.address) || isBlockedHost(rec.address)) {
+      throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
+    }
+    allowed.push({ address: rec.address, family: recordFamily(rec.address, rec.family) });
+  }
+  return allowed;
+}
+
+// Connect only to IPs already checked by assertSafeUrl. A later DNS answer
+// (TTL 0 / rebinding) must not replace them.
+export function createPinnedLookup(records) {
+  const pinned = normalizeRecords(records).filter((r) => r.address);
+  return function pinnedLookup(_hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    if (!pinned.length) {
+      callback(Object.assign(new Error('blocked_target'), { code: 'ENOTFOUND' }));
+      return;
+    }
+    if (options?.all) {
+      callback(
+        null,
+        pinned.map((r) => ({ address: r.address, family: r.family }))
+      );
+      return;
+    }
+    callback(null, pinned[0].address, pinned[0].family);
+  };
+}
+
+function wrapIncomingMessage(res) {
+  const headers = {
+    get(name) {
+      const v = res.headers[String(name).toLowerCase()];
+      if (v == null) return null;
+      return Array.isArray(v) ? v.join(', ') : String(v);
+    },
+  };
+  let consumed = false;
+  return {
+    status: res.statusCode,
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+    headers,
+    get body() {
+      if (consumed) return null;
+      consumed = true;
+      return Readable.toWeb(res);
+    },
+    async text() {
+      if (consumed) throw new Error('body already used');
+      consumed = true;
+      const chunks = [];
+      for await (const chunk of res) chunks.push(Buffer.from(chunk));
+      return Buffer.concat(chunks).toString('utf8');
+    },
+  };
+}
+
+export function pinnedHttpFetch(href, { headers = {}, signal, records } = {}) {
+  const url = new URL(href);
+  const lib = url.protocol === 'https:' ? https : http;
+  const host = String(url.hostname || '').replace(/^\[|\]$/g, '');
+  return new Promise((resolve, reject) => {
+    const req = lib.request(
+      url,
+      {
+        method: 'GET',
+        headers,
+        signal,
+        agent: false,
+        lookup: createPinnedLookup(records),
+        servername: url.protocol === 'https:' && !net.isIP(host) ? host : undefined,
+      },
+      (res) => resolve(wrapIncomingMessage(res))
+    );
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 export function looksLikePlaylist(url, contentType, body) {
@@ -122,25 +418,25 @@ export function rewritePlaylist(text, baseUrl, channelId) {
     .join('\n');
 }
 
-async function fetchFollow(url, headers, signal, hops = 0) {
+export async function fetchFollow(url, headers, signal, hops = 0, deps = {}) {
+  const { fetchImpl, lookupFn = dnsLookup } = deps;
   if (hops > MAX_REDIRECTS) {
     throw Object.assign(new Error('too_many_redirects'), { code: 'REDIRECTS' });
   }
-  if (isBlockedTarget(url)) {
-    throw Object.assign(new Error('blocked_target'), { code: 'BLOCKED' });
-  }
+  const records = await assertSafeUrl(url, { lookupFn });
+  const fetchFn = fetchImpl || pinnedHttpFetch;
 
-  const upstream = await fetch(url.href, { headers, signal, redirect: 'manual' });
+  const upstream = await fetchFn(url.href, { headers, signal, redirect: 'manual', records });
   if (upstream.status >= 300 && upstream.status < 400) {
     const location = upstream.headers.get('location');
-    if (!location) return upstream;
+    if (!location) return { response: upstream, finalUrl: url.href };
     let next;
     try {
       next = new URL(location, url);
     } catch {
       throw Object.assign(new Error('bad_redirect'), { code: 'BLOCKED' });
     }
-    return fetchFollow(next, headers, signal, hops + 1);
+    return fetchFollow(next, headers, signal, hops + 1, deps);
   }
   return { response: upstream, finalUrl: url.href };
 }

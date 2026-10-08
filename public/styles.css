@@ -111,18 +111,206 @@ body {
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
   gap: 24px;
-  padding: 24px 28px;
+  padding: 0 28px 24px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  min-width: 0;
+}
+
+.widgets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 18px auto 0;
+  padding: 0 28px 18px;
+}
+
+.widget {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-height: 148px;
+}
+
+.widget-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.widget-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.widget-muted {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.clock-figures {
+  font-variant-numeric: tabular-nums;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+  line-height: 1.1;
+}
+
+.widget-figure {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.wx-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wx-now strong {
+  font-size: 28px;
+}
+
+.wx-now p {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.wx-days {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.cal-weekdays,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+
+.cal-weekdays {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.cal-day {
+  font-size: 12px;
+  padding: 3px 0;
+  border-radius: 6px;
+}
+
+.cal-day.today {
+  background: var(--accent);
+  color: #1a1a1a;
+  font-weight: 700;
+}
+
+.reminder-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.reminder-form input,
+.reminder-form button {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 8px;
+  font-size: 13px;
+}
+
+.reminder-form button {
+  background: var(--accent);
+  color: #1a1a1a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reminder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 88px;
+  overflow: auto;
+}
+
+.reminder-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.reminder-item span,
+.reminder-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.reminder-del {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.reminder-toast {
+  position: sticky;
+  top: 72px;
+  z-index: 20;
+  margin: 12px auto 0;
+  max-width: 1400px;
+  width: calc(100% - 56px);
+  background: #3f2d0a;
+  border: 1px solid var(--accent);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reminder-toast[hidden] {
+  display: none;
+}
+
+.reminder-toast button {
+  background: var(--accent);
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .player-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .video-wrap {
@@ -293,6 +481,8 @@ body {
   align-self: start;
   position: sticky;
   top: 92px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel-head {
@@ -330,8 +520,13 @@ body {
 
 .filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filter {
@@ -343,6 +538,8 @@ body {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -493,9 +690,17 @@ body {
     padding: 12px 16px;
   }
   .layout {
-    grid-template-columns: 1fr;
-    padding: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 16px 16px;
     gap: 16px;
+  }
+  .widgets {
+    grid-template-columns: 1fr 1fr;
+    padding: 12px 16px;
+  }
+  .reminder-toast {
+    width: calc(100% - 32px);
+    top: 64px;
   }
   .channel-panel {
     position: static;
