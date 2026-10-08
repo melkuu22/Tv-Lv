@@ -51,7 +51,8 @@ function ensureDir() {
   fs.mkdirSync(LIVE_DIR, { recursive: true });
 }
 
-function ffmpegCopyArgs(source) {
+export function ffmpegCopyArgs(source) {
+  const tls = /^https:/i.test(source) ? ['-tls_verify', '1'] : [];
   return [
     '-hide_banner',
     '-loglevel',
@@ -64,6 +65,7 @@ function ffmpegCopyArgs(source) {
     '8',
     '-rw_timeout',
     '15000000',
+    ...tls,
     '-i',
     source,
     '-c',
@@ -82,7 +84,7 @@ function ffmpegCopyArgs(source) {
   ];
 }
 
-function ffmpegSyntheticArgs() {
+export function ffmpegSyntheticArgs() {
   return [
     '-hide_banner',
     '-loglevel',

@@ -2,7 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.NODE_ENV = 'test';
-import { pickUpstream, liveMuxStatus, installMuxChildForTest, createFakeMuxChild, LIVE_DIR } from '../live-mux.js';
+import {
+  pickUpstream,
+  liveMuxStatus,
+  installMuxChildForTest,
+  createFakeMuxChild,
+  LIVE_DIR,
+  ffmpegCopyArgs,
+  ffmpegSyntheticArgs,
+} from '../live-mux.js';
 
 test('pickUpstream returns the first HTTP 200 candidate', async () => {
   const calls = [];
@@ -27,6 +35,23 @@ test('live mux is idle under the test runner', () => {
   const status = liveMuxStatus();
   assert.equal(status.running, false);
   assert.match(LIVE_DIR, /tv-lv-live-/);
+});
+
+test('HTTPS remux enables TLS peer verification before -i', () => {
+  const httpsArgs = ffmpegCopyArgs('https://cdn.example/live.m3u8');
+  const tlsAt = httpsArgs.indexOf('-tls_verify');
+  const inputAt = httpsArgs.indexOf('-i');
+  assert.notEqual(tlsAt, -1);
+  assert.equal(httpsArgs[tlsAt + 1], '1');
+  assert.ok(tlsAt < inputAt);
+  assert.equal(httpsArgs[inputAt + 1], 'https://cdn.example/live.m3u8');
+
+  const httpArgs = ffmpegCopyArgs('http://cdn.example/live.m3u8');
+  assert.equal(httpArgs.includes('-tls_verify'), false);
+
+  const synthetic = ffmpegSyntheticArgs();
+  assert.equal(synthetic.includes('-tls_verify'), false);
+  assert.ok(synthetic.includes('testsrc2=size=1280x720:rate=25'));
 });
 
 test('missing ffmpeg is reported instead of crashing the process', () => {
