@@ -4,13 +4,15 @@ import morgan from 'morgan';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { channels, findChannel, countryFlags, shouldProxy, isPlayable } from './data/channels.js';
+import { channels, findChannel, countryFlags, bouquets, shouldProxy, isPlayable } from './data/channels.js';
 import { createProxyHandler } from './proxy.js';
+import { LIVE_DIR, liveMuxStatus, startLiveMux, stopLiveMux } from './live-mux.js';
+import { fetchRigaWeather } from './public/widgets.js';
 
-// Direct CORS-friendly HTTPS streams play from the origin; everything else
-// (HTTP, missing CORS, extra headers) goes through the same-origin proxy.
+// Same-origin play: local mux at /live, everything else through /proxy/:id.
 function playUrlFor(channel) {
   if (!isPlayable(channel)) return null;
+  if (channel.local) return channel.stream;
   return shouldProxy(channel) ? `/proxy/${channel.id}` : channel.stream;
 }
 
@@ -57,16 +59,47 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('/live/index.m3u8', (req, res, next) => {
+  const live = liveMuxStatus();
+  if (live.ready) return next();
+  res.status(503).json({ error: live.error || 'live_unavailable' });
+});
+
+app.use(
+  '/live',
+  express.static(LIVE_DIR, {
+    setHeaders(res) {
+      res.setHeader('Cache-Control', 'no-cache, no-store');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    },
+  })
+);
+
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', channels: channels.length, uptime: process.uptime() });
+  res.json({
+    status: 'ok',
+    channels: channels.length,
+    uptime: process.uptime(),
+    live: liveMuxStatus(),
+  });
 });
 
 app.get('/api/channels', (_req, res) => {
   res.json({
     count: channels.length,
     countryFlags,
+    bouquets,
     channels: channels.map(toPublicChannel),
   });
+});
+
+app.get('/api/weather', async (_req, res) => {
+  try {
+    const weather = await fetchRigaWeather();
+    res.json(weather);
+  } catch {
+    res.status(502).json({ error: 'weather_unavailable', city: 'Rīga' });
+  }
 });
 
 app.get('/api/channels/:id', (req, res) => {
@@ -83,9 +116,20 @@ app.get('/proxy/:id', createProxyHandler());
 // Only start the HTTP server when run directly (not when imported by tests).
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
-  app.listen(PORT, HOST, () => {
+  const remotes = channels.filter((c) => c.live && /^https?:\/\//.test(c.stream || '')).map((c) => c.stream);
+  startLiveMux(remotes).catch((err) => {
+    console.error('live mux failed to start', err);
+  });
+  const httpServer = app.listen(PORT, HOST, () => {
     console.log(`Latvijas.tv free is running at http://${HOST}:${PORT}`);
   });
+  const shutdown = () => {
+    stopLiveMux();
+    httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 export default app;
